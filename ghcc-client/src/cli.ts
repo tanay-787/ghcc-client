@@ -24,7 +24,8 @@ program
 program
   .command('stop')
   .description('Stop remote session')
-  .option('-s, --session <name>', 'tmux session name', 'copilot-remote')
+  .option('-s, --session <name>', 'Stop a specific session')
+  .option('--all', 'Stop all sessions')
   .action(async (options: StopOptions) => {
     await manager.stop(options);
   });
@@ -32,7 +33,7 @@ program
 program
   .command('status')
   .description('Check session status')
-  .option('-s, --session <name>', 'tmux session name', 'copilot-remote')
+  .option('-s, --session <name>', 'tmux session name')
   .action(async (options: StatusOptions) => {
     await manager.status(options);
   });

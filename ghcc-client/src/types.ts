@@ -4,11 +4,12 @@ export interface StartOptions {
 }
 
 export interface StopOptions {
-  session: string;
+  session?: string;
+  all?: boolean;
 }
 
 export interface StatusOptions {
-  session: string;
+  session?: string;
 }
 
 export interface UrlOptions {

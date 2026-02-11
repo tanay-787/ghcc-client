@@ -96,7 +96,6 @@ Output:
 🚀 Starting GitHub Copilot Remote Session...
 
 ✔ Copilot CLI found
-✔ No existing session found
 ✔ Copilot started in tmux session "copilot-remote"
 ✔ ttyd server started on port 7681
 
@@ -104,10 +103,32 @@ Output:
 
 Access URLs:
   Desktop Browser: http://localhost:7681
-  Mobile Browser:  http://192.168.1.100:7681
-  Terminal:        tmux attach -t copilot-remote
+  Mobile Browser:  http://10.88.0.3:7681
+  Session Name:    copilot-remote
 
 💡 Tip: Use "ghcc-client url" to see these URLs again
+```
+
+### First Time Setup
+
+When you first connect via browser, login using the interactive command:
+
+```bash
+# Inside the browser terminal:
+/login
+```
+
+Follow the OAuth flow to authenticate with GitHub.
+
+### Session Management
+
+Use Copilot's built-in commands in the browser terminal:
+
+```bash
+/resume        # Switch between your sessions
+/clear         # Start a fresh conversation
+/model         # Change AI model
+/help          # See all available commands
 ```
 
 ### Access from Mobile
