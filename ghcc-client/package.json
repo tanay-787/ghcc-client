@@ -1,0 +1,54 @@
+{
+  "name": "ghcc-client",
+  "version": "1.0.0",
+  "description": "Remote access client for GitHub Copilot CLI - Access your Copilot session from mobile or any browser",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "ghcc-client": "./dist/cli.js",
+    "ghcc": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build",
+    "postinstall": "node dist/setup.js",
+    "clean": "rm -rf dist",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "copilot",
+    "github",
+    "cli",
+    "remote",
+    "mobile",
+    "tmux",
+    "ttyd",
+    "terminal",
+    "typescript"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/ghcc-client.git"
+  },
+  "files": [
+    "dist/",
+    "binaries/",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^12.0.0",
+    "ora": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

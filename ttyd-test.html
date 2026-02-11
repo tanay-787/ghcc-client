@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ttyd Remote Copilot Access - Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #1e1e1e;
+      color: #fff;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin-bottom: 10px;
+      color: #4ec9b0;
+    }
+    .status {
+      background: #2d7a2d;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .info {
+      background: #264f78;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .terminal-container {
+      background: #000;
+      border: 2px solid #3e3e42;
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 20px;
+      height: 600px;
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: 5px;
+    }
+    .instructions {
+      background: #1e3a1e;
+      padding: 15px;
+      border-radius: 8px;
+      line-height: 1.6;
+    }
+    .instructions h3 {
+      margin-bottom: 10px;
+      color: #4ec9b0;
+    }
+    .instructions code {
+      background: #252526;
+      padding: 2px 6px;
+      border-radius: 3px;
+      color: #ce9178;
+    }
+    .instructions ul {
+      margin-left: 20px;
+      margin-top: 10px;
+    }
+    .instructions li {
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 ttyd Remote Copilot Access</h1>
+    
+    <div class="status">
+      ✅ <strong>Status:</strong> ttyd server is running on port 7681
+    </div>
+
+    <div class="info">
+      <strong>📱 Mobile Access:</strong> Open this URL on your phone:
+      <code>http://YOUR_SERVER_IP:7681</code>
+      <br><br>
+      <strong>💻 Desktop Access:</strong> Terminal is embedded below ↓
+    </div>
+
+    <div class="terminal-container">
+      <iframe src="http://localhost:7681"></iframe>
+    </div>
+
+    <div class="instructions">
+      <h3>✨ How This Works:</h3>
+      <ul>
+        <li><strong>tmux session:</strong> Copilot CLI is running in tmux session "copilot-test"</li>
+        <li><strong>ttyd:</strong> Exposing the tmux session via WebSocket on port 7681</li>
+        <li><strong>Access:</strong> You can interact with the same session from:
+          <ul>
+            <li>This browser window</li>
+            <li>Your mobile phone</li>
+            <li>Desktop terminal: <code>tmux attach -t copilot-test</code></li>
+          </ul>
+        </li>
+        <li><strong>Real-time sync:</strong> All connections see the SAME session!</li>
+      </ul>
+
+      <h3 style="margin-top: 20px;">📱 To Test on Mobile:</h3>
+      <ul>
+        <li>1. Find your server's IP address</li>
+        <li>2. Open mobile browser: <code>http://YOUR_IP:7681</code></li>
+        <li>3. You'll see the Copilot CLI terminal</li>
+        <li>4. Type messages - they'll appear on desktop too!</li>
+      </ul>
+
+      <h3 style="margin-top: 20px;">🛠️ Commands:</h3>
+      <ul>
+        <li><strong>Stop ttyd:</strong> <code>kill $(pgrep ttyd)</code></li>
+        <li><strong>Kill tmux session:</strong> <code>tmux kill-session -t copilot-test</code></li>
+        <li><strong>Restart:</strong> Start tmux session, then run ttyd again</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
