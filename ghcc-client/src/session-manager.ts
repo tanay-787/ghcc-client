@@ -493,6 +493,11 @@ export class SessionManager {
       console.log(chalk.white('📱 Scan QR code to access from mobile:\n'));
       qrcode.generate(publicUrl, { small: true });
       console.log();
+      console.log(chalk.yellow('⚠️  Important: Visitors need the tunnel password'));
+      console.log(chalk.gray('   On first visit, they\'ll see a security page'));
+      console.log(chalk.gray('   They must enter the password shown above'));
+      console.log(chalk.gray('   After that, it works for 7 days from their IP'));
+      console.log();
     }
     
     this.showUrls(finalPort.toString(), finalSession, publicUrl);
