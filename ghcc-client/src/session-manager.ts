@@ -340,33 +340,21 @@ export class SessionManager {
     let publicUrl = ''; // Declare here for scope across ttyd and tunnel blocks
     const spinner4: Ora = ora(`Starting ttyd server on port ${finalPort}...`).start();
     
-    // Create custom HTML for mobile-optimized terminal
-    const templatePath = path.join(__dirname, '..', 'assets', 'terminal.html');
-    const customHtmlPath = `/tmp/ghcc-${finalSession}.html`;
-    
-    try {
-      const template = fs.readFileSync(templatePath, 'utf-8');
-      const customHtml = template.replace(/{{SESSION_NAME}}/g, finalSession);
-      fs.writeFileSync(customHtmlPath, customHtml);
-    } catch (error) {
-      console.log(chalk.yellow('Warning: Could not create custom HTML, using default ttyd interface'));
-    }
-    
     try {
       const ttydArgs = [
         '-p', finalPort.toString(),
         '-W',  // Allow clients to write
       ];
       
-      // Add custom HTML if it exists
-      if (fs.existsSync(customHtmlPath)) {
-        ttydArgs.push('-I', customHtmlPath);
-      }
-      
-      // Add client options for better UX
+      // Add client options for better UX and mobile optimization
+      // Note: ttyd has built-in mobile support in its default HTML.
+      // We customize via client options instead of custom HTML.
       ttydArgs.push('-t', 'fontSize=14');
-      ttydArgs.push('-t', 'theme={"background":"#1e1e1e","foreground":"#d4d4d4"}');
+      ttydArgs.push('-t', 'fontFamily=Consolas,Monaco,Courier New,monospace');
+      ttydArgs.push('-t', 'theme={"background":"#1e1e1e","foreground":"#d4d4d4","cursor":"#d4d4d4","selection":"#264f78"}');
       ttydArgs.push('-t', `titleFixed=GitHub Copilot - ${finalSession}`);
+      ttydArgs.push('-t', 'disableLeaveAlert=true');
+      ttydArgs.push('-t', 'disableResizeOverlay=true');
       
       // Add tmux command
       ttydArgs.push('tmux', 'attach', '-t', finalSession);
