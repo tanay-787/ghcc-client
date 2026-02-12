@@ -54,6 +54,43 @@ export class SessionManager {
     }
   }
 
+  // Batch method: Get all ttyd processes at once (performance optimization)
+  private async getAllTtydProcesses(): Promise<Map<string, { pid: string; port: string }>> {
+    const processMap = new Map<string, { pid: string; port: string }>();
+    
+    try {
+      // Single pgrep call for all copilot-remote ttyd processes
+      const { stdout: pids } = await execAsync('pgrep -f "ttyd.*copilot-remote" 2>/dev/null || true');
+      const pidList = pids.trim().split('\n').filter(p => p);
+      
+      for (const pid of pidList) {
+        if (!pid) continue;
+        
+        try {
+          // Get command line to extract session and port
+          const { stdout: cmdline } = await execAsync(`ps -p ${pid} -o args= 2>/dev/null`);
+          
+          // Extract session name
+          const sessionMatch = cmdline.match(/attach -t (copilot-remote[^\s]*)/);
+          if (!sessionMatch) continue;
+          const sessionName = sessionMatch[1];
+          
+          // Extract port
+          const portMatch = cmdline.match(/-p (\d+)/);
+          const port = portMatch ? portMatch[1] : '';
+          
+          processMap.set(sessionName, { pid, port });
+        } catch {
+          // Skip this process if we can't parse it
+        }
+      }
+    } catch {
+      // Return empty map on error
+    }
+    
+    return processMap;
+  }
+
   // Get port number from ttyd process
   private async getTtydPort(pid: string): Promise<string | null> {
     try {
@@ -76,6 +113,22 @@ export class SessionManager {
 
   private async cleanupOrphanedProcesses(): Promise<void> {
     try {
+      // OPTIMIZATION: Skip cleanup if run recently (within 5 minutes)
+      const cleanupMarker = '/tmp/ghcc-last-cleanup';
+      try {
+        const { stdout } = await execAsync(`stat -c %Y ${cleanupMarker} 2>/dev/null || echo 0`);
+        const lastCleanup = parseInt(stdout.trim());
+        const now = Math.floor(Date.now() / 1000);
+        const timeSinceCleanup = now - lastCleanup;
+        
+        if (timeSinceCleanup < 300) { // 5 minutes = 300 seconds
+          // Skip cleanup, too recent
+          return;
+        }
+      } catch {
+        // No marker file, proceed with cleanup
+      }
+      
       // Strategy: Use actual running processes as source of truth
       
       // 1. Find all running ttyd processes for copilot-remote
@@ -136,6 +189,9 @@ export class SessionManager {
       } catch {
         // Ignore PID file cleanup errors
       }
+      
+      // Update cleanup marker
+      await execAsync(`touch ${cleanupMarker} 2>/dev/null || true`);
     } catch {
       // Error during cleanup, continue anyway
     }
@@ -266,13 +322,16 @@ export class SessionManager {
       
       spinner4.succeed(`ttyd server started on port ${finalPort}`);
       
-      // Set up tmux hook for automatic cleanup (process-based)
+      // Set up tmux hook for automatic cleanup
+      // Note: Hook uses PID for simplicity (edge case cleanup only)
+      // Main architecture remains process-based
       try {
-        // Hook command: find ttyd process for this session and kill it
-        const hookCmd = `run-shell "kill \\$(pgrep -f 'ttyd.*attach -t ${finalSession}\\$' 2>/dev/null) 2>/dev/null || true"`;
+        const hookCmd = `run-shell "kill ${ttydPid} 2>/dev/null || true"`;
         await execAsync(`tmux set-hook -t ${finalSession} session-closed "${hookCmd}"`);
       } catch (error) {
+        // Log error for debugging but don't fail the start
         console.log(chalk.yellow('\n⚠️  Warning: Failed to set up automatic cleanup hook'));
+        console.log(chalk.gray(`   Error: ${error instanceof Error ? error.message : error}`));
         console.log(chalk.gray('   (You may need to manually stop the session later)'));
       }
       
@@ -395,7 +454,7 @@ export class SessionManager {
       // Show status for specific session
       await this.showSessionStatus(session);
     } else {
-      // Show status for all sessions
+      // Show status for all sessions (optimized with batch discovery)
       try {
         const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}" 2>/dev/null || true');
         const allSessions = stdout.trim().split('\n').filter(s => s && s.startsWith('copilot-remote'));
@@ -405,8 +464,11 @@ export class SessionManager {
           return;
         }
         
+        // OPTIMIZATION: Single batch call instead of N individual calls
+        const processMap = await this.getAllTtydProcesses();
+        
         for (const sess of allSessions) {
-          await this.showSessionStatus(sess);
+          await this.showSessionStatusWithCache(sess, processMap);
           console.log('');
         }
       } catch (error) {
@@ -443,6 +505,37 @@ export class SessionManager {
       } else {
         console.log(chalk.gray(`   ttyd: running (port unknown)`));
       }
+    } else {
+      console.log(chalk.gray(`   ttyd: not running`));
+    }
+  }
+
+  // Optimized version using pre-fetched process map
+  private async showSessionStatusWithCache(session: string, processMap: Map<string, { pid: string; port: string }>): Promise<void> {
+    // Check if tmux session exists
+    if (!(await this.sessionExists(session))) {
+      console.log(chalk.red(`❌ ${session} (not running)`));
+      return;
+    }
+    
+    // Session exists, show details
+    console.log(chalk.green(`✅ ${session}`));
+    
+    // Get creation time
+    try {
+      const { stdout } = await execAsync(`tmux display-message -t ${session} -p "#{session_created}"`);
+      const created = new Date(parseInt(stdout.trim()) * 1000);
+      console.log(chalk.gray(`   Started: ${created.toLocaleString()}`));
+    } catch {
+      // Can't get creation time
+    }
+
+    // Lookup from cache instead of calling pgrep
+    const processInfo = processMap.get(session);
+    if (processInfo && processInfo.port) {
+      console.log(chalk.gray(`   Port: ${processInfo.port}`));
+    } else if (processInfo) {
+      console.log(chalk.gray(`   ttyd: running (port unknown)`));
     } else {
       console.log(chalk.gray(`   ttyd: not running`));
     }
