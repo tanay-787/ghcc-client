@@ -191,6 +191,12 @@ export class SessionManager {
               if (fs.existsSync(urlFile)) {
                 fs.unlinkSync(urlFile);
               }
+              
+              // Clean up custom HTML file
+              const htmlFile = `/tmp/ghcc-${sessionName}.html`;
+              if (fs.existsSync(htmlFile)) {
+                fs.unlinkSync(htmlFile);
+              }
             }
           }
         } catch {
@@ -218,6 +224,11 @@ export class SessionManager {
           const urlFile = `/tmp/ghcc-${sessionName}-tunnel-url`;
           if (fs.existsSync(urlFile)) {
             fs.unlinkSync(urlFile);
+          }
+          
+          const htmlFile = `/tmp/ghcc-${sessionName}.html`;
+          if (fs.existsSync(htmlFile)) {
+            fs.unlinkSync(htmlFile);
           }
         }
       }
@@ -328,12 +339,39 @@ export class SessionManager {
 
     let publicUrl = ''; // Declare here for scope across ttyd and tunnel blocks
     const spinner4: Ora = ora(`Starting ttyd server on port ${finalPort}...`).start();
+    
+    // Create custom HTML for mobile-optimized terminal
+    const templatePath = path.join(__dirname, '..', 'assets', 'terminal.html');
+    const customHtmlPath = `/tmp/ghcc-${finalSession}.html`;
+    
     try {
-      const ttyd = spawn(this.ttydPath, [
+      const template = fs.readFileSync(templatePath, 'utf-8');
+      const customHtml = template.replace(/{{SESSION_NAME}}/g, finalSession);
+      fs.writeFileSync(customHtmlPath, customHtml);
+    } catch (error) {
+      console.log(chalk.yellow('Warning: Could not create custom HTML, using default ttyd interface'));
+    }
+    
+    try {
+      const ttydArgs = [
         '-p', finalPort.toString(),
-        '-W',
-        'tmux', 'attach', '-t', finalSession
-      ], {
+        '-W',  // Allow clients to write
+      ];
+      
+      // Add custom HTML if it exists
+      if (fs.existsSync(customHtmlPath)) {
+        ttydArgs.push('-I', customHtmlPath);
+      }
+      
+      // Add client options for better UX
+      ttydArgs.push('-t', 'fontSize=14');
+      ttydArgs.push('-t', 'theme={"background":"#1e1e1e","foreground":"#d4d4d4"}');
+      ttydArgs.push('-t', `titleFixed=GitHub Copilot - ${finalSession}`);
+      
+      // Add tmux command
+      ttydArgs.push('tmux', 'attach', '-t', finalSession);
+      
+      const ttyd = spawn(this.ttydPath, ttydArgs, {
         detached: true,
         stdio: 'ignore'
       });
@@ -541,11 +579,28 @@ export class SessionManager {
             }
           }
           
+          // Find and kill tunnel (process-based)
+          const tunnelPid = await this.findTunnelPid(sess);
+          if (tunnelPid) {
+            try {
+              await execAsync(`kill ${tunnelPid} 2>/dev/null || true`);
+            } catch {
+              // Already dead
+            }
+          }
+          
           // Kill tmux session
           try {
             await execAsync(`tmux kill-session -t ${sess} 2>/dev/null || true`);
           } catch {
             // Already dead
+          }
+          
+          // Clean up temp files
+          try {
+            await execAsync(`rm -f /tmp/ghcc-${sess}-tunnel-url /tmp/ghcc-${sess}.html`);
+          } catch {
+            // Ignore cleanup errors
           }
           
           console.log(chalk.green(`✔ ${sess} stopped`));
@@ -589,6 +644,12 @@ export class SessionManager {
     const urlFile = `/tmp/ghcc-${sessionName}-tunnel-url`;
     if (fs.existsSync(urlFile)) {
       fs.unlinkSync(urlFile);
+    }
+    
+    // Clean up custom HTML file
+    const htmlFile = `/tmp/ghcc-${sessionName}.html`;
+    if (fs.existsSync(htmlFile)) {
+      fs.unlinkSync(htmlFile);
     }
 
     // Kill tmux session if it exists
