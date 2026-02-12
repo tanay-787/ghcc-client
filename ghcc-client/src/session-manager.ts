@@ -461,6 +461,17 @@ export class SessionManager {
         });
         
         spinner5.succeed(`Public URL created: ${chalk.cyan(publicUrl)}`);
+        
+        // Get tunnel password (public IP) for user to share
+        try {
+          const { stdout: tunnelPassword } = await execAsync('curl -s https://loca.lt/mytunnelpassword');
+          const password = tunnelPassword.trim();
+          if (password) {
+            console.log(chalk.gray(`   Tunnel Password: ${chalk.white(password)} ${chalk.gray('(share with visitors)')}`));
+          }
+        } catch {
+          // Ignore if we can't fetch the password
+        }
       } catch (error) {
         spinner5.warn('Failed to create public tunnel');
         console.log(chalk.yellow('   Session is available locally only'));
