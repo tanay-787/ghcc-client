@@ -9,7 +9,8 @@
     "ghcc": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run copy-assets",
+    "copy-assets": "mkdir -p dist/assets && cp -r assets/* dist/assets/",
     "dev": "tsc --watch",
     "prepublishOnly": "npm run build",
     "postinstall": "node dist/setup.js",

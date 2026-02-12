@@ -340,15 +340,38 @@ export class SessionManager {
     let publicUrl = ''; // Declare here for scope across ttyd and tunnel blocks
     const spinner4: Ora = ora(`Starting ttyd server on port ${finalPort}...`).start();
     
+    // Create mobile-optimized HTML using ttyd's base + our fixes
+    const basePath = path.join(__dirname, '..', 'assets', 'ttyd-base.html');
+    const customHtmlPath = `/tmp/ghcc-${finalSession}.html`;
+    
+    try {
+      let html = fs.readFileSync(basePath, 'utf-8');
+      
+      // Replace title
+      html = html.replace(/<title>.*?<\/title>/, `<title>GitHub Copilot - ${finalSession}</title>`);
+      
+      // Add viewport meta tag if not present (critical for mobile)
+      if (!html.includes('<meta name="viewport"')) {
+        html = html.replace('<head>', '<head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">');
+      }
+      
+      fs.writeFileSync(customHtmlPath, html);
+    } catch (error) {
+      console.log(chalk.yellow('Warning: Could not create mobile HTML, mobile portrait may not work'));
+    }
+    
     try {
       const ttydArgs = [
         '-p', finalPort.toString(),
         '-W',  // Allow clients to write
       ];
       
-      // Add client options for better UX and mobile optimization
-      // Note: ttyd has built-in mobile support in its default HTML.
-      // We customize via client options instead of custom HTML.
+      // Use custom HTML with mobile fixes if available
+      if (fs.existsSync(customHtmlPath)) {
+        ttydArgs.push('-I', customHtmlPath);
+      }
+      
+      // Add client options for better UX
       ttydArgs.push('-t', 'fontSize=14');
       ttydArgs.push('-t', 'fontFamily=Consolas,Monaco,Courier New,monospace');
       ttydArgs.push('-t', 'theme={"background":"#1e1e1e","foreground":"#d4d4d4","cursor":"#d4d4d4","selection":"#264f78"}');
