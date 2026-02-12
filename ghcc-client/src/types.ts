@@ -13,7 +13,7 @@ export interface StatusOptions {
 }
 
 export interface UrlOptions {
-  port: string;
+  session?: string;
 }
 
 export interface SessionInfo {

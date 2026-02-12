@@ -40,10 +40,10 @@ program
 
 program
   .command('url')
-  .description('Show access URLs')
-  .option('-p, --port <port>', 'Port number', '7681')
-  .action((options: UrlOptions) => {
-    manager.showUrls(options.port);
+  .description('Show QR code and public URL for a session')
+  .option('-s, --session <name>', 'Session name')
+  .action(async (options: UrlOptions) => {
+    await manager.url(options);
   });
 
 program.parse();

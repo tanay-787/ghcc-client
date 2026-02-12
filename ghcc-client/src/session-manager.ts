@@ -5,7 +5,9 @@ import os from 'os';
 import fs from 'fs';
 import chalk from 'chalk';
 import ora, { Ora } from 'ora';
-import type { StartOptions, StopOptions, StatusOptions } from './types';
+import localtunnel from 'localtunnel';
+import qrcode from 'qrcode-terminal';
+import type { StartOptions, StopOptions, StatusOptions, UrlOptions } from './types';
 
 const execAsync = promisify(exec);
 
@@ -102,6 +104,33 @@ export class SessionManager {
     }
   }
 
+  // Find tunnel process PID for a session
+  private async findTunnelPid(sessionName: string): Promise<string | null> {
+    try {
+      // Look for localtunnel process with session name in args
+      const { stdout } = await execAsync(`pgrep -f "node.*localtunnel.*${sessionName}" 2>/dev/null || true`);
+      const pid = stdout.trim();
+      return pid || null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Extract public URL from tunnel process
+  private async getTunnelUrl(sessionName: string): Promise<string | null> {
+    try {
+      // Check if tunnel PID file exists (we'll store URL there)
+      const urlFile = `/tmp/ghcc-${sessionName}-tunnel-url`;
+      if (fs.existsSync(urlFile)) {
+        const url = fs.readFileSync(urlFile, 'utf-8').trim();
+        return url || null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   private async isPortInUse(port: number): Promise<boolean> {
     try {
       await execAsync(`lsof -i :${port} 2>/dev/null`);
@@ -150,6 +179,18 @@ export class SessionManager {
             if (!(await this.sessionExists(sessionName))) {
               // ttyd running but tmux session gone - kill orphaned ttyd
               await execAsync(`kill ${pid} 2>/dev/null || true`);
+              
+              // Also kill associated tunnel
+              const tunnelPid = await this.findTunnelPid(sessionName);
+              if (tunnelPid) {
+                await execAsync(`kill ${tunnelPid} 2>/dev/null || true`);
+              }
+              
+              // Clean up tunnel URL file
+              const urlFile = `/tmp/ghcc-${sessionName}-tunnel-url`;
+              if (fs.existsSync(urlFile)) {
+                fs.unlinkSync(urlFile);
+              }
             }
           }
         } catch {
@@ -166,8 +207,18 @@ export class SessionManager {
         const ttydPid = await this.findTtydPid(sessionName);
         
         if (!ttydPid) {
-          // Tmux session exists but no ttyd - kill orphaned session
+          // Tmux session exists but no ttyd - kill orphaned session and tunnel
           await execAsync(`tmux kill-session -t ${sessionName} 2>/dev/null || true`);
+          
+          const tunnelPid = await this.findTunnelPid(sessionName);
+          if (tunnelPid) {
+            await execAsync(`kill ${tunnelPid} 2>/dev/null || true`);
+          }
+          
+          const urlFile = `/tmp/ghcc-${sessionName}-tunnel-url`;
+          if (fs.existsSync(urlFile)) {
+            fs.unlinkSync(urlFile);
+          }
         }
       }
       
@@ -275,6 +326,7 @@ export class SessionManager {
       process.exit(1);
     }
 
+    let publicUrl = ''; // Declare here for scope across ttyd and tunnel blocks
     const spinner4: Ora = ora(`Starting ttyd server on port ${finalPort}...`).start();
     try {
       const ttyd = spawn(this.ttydPath, [
@@ -344,6 +396,32 @@ export class SessionManager {
         await execAsync(`tmux kill-session -t ${finalSession} 2>/dev/null || true`);
         process.exit(1);
       }
+      
+      // Create public tunnel
+      const spinner5: Ora = ora('Creating public URL tunnel...').start();
+      try {
+        const tunnel = await localtunnel({ 
+          port: parseInt(finalPort.toString()),
+          subdomain: finalSession.replace('copilot-remote', 'ghcc').replace(/[^a-zA-Z0-9-]/g, '')
+        });
+        
+        publicUrl = tunnel.url;
+        
+        // Store URL in file for later retrieval
+        const urlFile = `/tmp/ghcc-${finalSession}-tunnel-url`;
+        fs.writeFileSync(urlFile, publicUrl);
+        
+        // Set up tunnel error handler
+        tunnel.on('error', (err: Error) => {
+          console.log(chalk.yellow(`\n⚠️  Tunnel error: ${err.message}`));
+        });
+        
+        spinner5.succeed(`Public URL created: ${chalk.cyan(publicUrl)}`);
+      } catch (error) {
+        spinner5.warn('Failed to create public tunnel');
+        console.log(chalk.yellow('   Session is available locally only'));
+        console.log(chalk.gray(`   Error: ${error instanceof Error ? error.message : error}`));
+      }
     } catch (error) {
       spinner4.fail('Failed to spawn ttyd process');
       console.error(chalk.red('\n✗ Error: ' + (error as Error).message));
@@ -353,7 +431,15 @@ export class SessionManager {
     }
 
     console.log(chalk.green('\n✅ Remote session is ready!\n'));
-    this.showUrls(finalPort.toString(), finalSession);
+    
+    // Show QR code if public URL exists
+    if (publicUrl) {
+      console.log(chalk.white('📱 Scan QR code to access from mobile:\n'));
+      qrcode.generate(publicUrl, { small: true });
+      console.log();
+    }
+    
+    this.showUrls(finalPort.toString(), finalSession, publicUrl);
   }
 
   async stop(options: StopOptions): Promise<void> {
@@ -426,6 +512,22 @@ export class SessionManager {
       } catch {
         // Already dead
       }
+    }
+    
+    // Find and kill tunnel process
+    const tunnelPid = await this.findTunnelPid(sessionName);
+    if (tunnelPid) {
+      try {
+        await execAsync(`kill ${tunnelPid} 2>/dev/null || true`);
+      } catch {
+        // Already dead
+      }
+    }
+    
+    // Clean up tunnel URL file
+    const urlFile = `/tmp/ghcc-${sessionName}-tunnel-url`;
+    if (fs.existsSync(urlFile)) {
+      fs.unlinkSync(urlFile);
     }
 
     // Kill tmux session if it exists
@@ -508,6 +610,12 @@ export class SessionManager {
     } else {
       console.log(chalk.gray(`   ttyd: not running`));
     }
+    
+    // Show public URL if available
+    const publicUrl = await this.getTunnelUrl(session);
+    if (publicUrl) {
+      console.log(chalk.gray(`   Public URL: ${chalk.cyan(publicUrl)}`));
+    }
   }
 
   // Optimized version using pre-fetched process map
@@ -539,9 +647,15 @@ export class SessionManager {
     } else {
       console.log(chalk.gray(`   ttyd: not running`));
     }
+    
+    // Show public URL if available
+    const publicUrl = await this.getTunnelUrl(session);
+    if (publicUrl) {
+      console.log(chalk.gray(`   Public URL: ${chalk.cyan(publicUrl)}`));
+    }
   }
 
-  showUrls(port: string, session?: string): void {
+  showUrls(port: string, session?: string, publicUrl?: string): void {
     const interfaces = os.networkInterfaces();
     let localIp = 'localhost';
     
@@ -558,13 +672,49 @@ export class SessionManager {
     }
 
     console.log(chalk.cyan('Access URLs:'));
-    console.log(chalk.white(`  Desktop Browser: ${chalk.underline(`http://localhost:${port}`)}`));
-    console.log(chalk.white(`  Mobile Browser:  ${chalk.underline(`http://${localIp}:${port}`)}`));
+    console.log(chalk.white(`  Local:      ${chalk.underline(`http://localhost:${port}`)}`));
+    console.log(chalk.white(`  Network:    ${chalk.underline(`http://${localIp}:${port}`)}`));
+    if (publicUrl) {
+      console.log(chalk.white(`  Public:     ${chalk.underline(publicUrl)}`));
+    }
     if (session) {
-      console.log(chalk.white(`  Session Name:    ${session}`));
+      console.log(chalk.white(`  Session:    ${session}`));
     }
     console.log('');
-    console.log(chalk.gray('💡 Tip: Use "ghcc-client url" to see these URLs again'));
+    console.log(chalk.gray('💡 Tip: Use "ghcc-client url -s <session>" to see QR code again'));
+    console.log('');
+  }
+  
+  async url(options: UrlOptions): Promise<void> {
+    const { session } = options;
+    
+    // Case 1: No session provided - show help
+    if (!session) {
+      console.log(chalk.yellow('\n⚠️  Please specify a session name\n'));
+      console.log(chalk.white('Usage: ghcc-client url -s <session-name>'));
+      console.log('');
+      console.log(chalk.gray('💡 Tip: Run "ghcc-client status" to see all sessions'));
+      console.log('');
+      return;
+    }
+    
+    // Case 2: Show QR code for specific session
+    if (!(await this.sessionExists(session))) {
+      console.log(chalk.red(`\n❌ Session "${session}" is not running\n`));
+      return;
+    }
+    
+    const publicUrl = await this.getTunnelUrl(session);
+    if (!publicUrl) {
+      console.log(chalk.yellow(`\n⚠️  No public URL found for session "${session}"\n`));
+      console.log(chalk.gray('This session may not have a tunnel, or the tunnel failed to start.'));
+      console.log('');
+      return;
+    }
+    
+    console.log(chalk.cyan(`\n📱 QR Code for session "${session}":\n`));
+    console.log(chalk.white(`URL: ${chalk.underline(publicUrl)}\n`));
+    qrcode.generate(publicUrl, { small: true });
     console.log('');
   }
 }
