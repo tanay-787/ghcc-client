@@ -397,13 +397,50 @@ export class SessionManager {
         process.exit(1);
       }
       
-      // Create public tunnel
+      // Create public tunnel with timeout and retry logic
+      // Based on localtunnel GitHub issues: https://github.com/localtunnel/localtunnel/issues
+      // Common issue: Promise hangs when tunnel server is slow/unavailable
+      // Solution: Promise.race() with timeout + retry
+      let publicUrl = '';
       const spinner5: Ora = ora('Creating public URL tunnel...').start();
-      try {
-        const tunnel = await localtunnel({ 
-          port: parseInt(finalPort.toString()),
-          subdomain: finalSession.replace('copilot-remote', 'ghcc').replace(/[^a-zA-Z0-9-]/g, '')
+      
+      const createTunnelWithTimeout = async (port: number, subdomain: string, timeoutMs: number = 15000): Promise<any> => {
+        const tunnelPromise = localtunnel({ 
+          port,
+          subdomain
         });
+        
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Tunnel connection timeout after ' + (timeoutMs/1000) + 's')), timeoutMs);
+        });
+        
+        return Promise.race([tunnelPromise, timeoutPromise]);
+      };
+      
+      try {
+        const subdomain = finalSession.replace('copilot-remote', 'ghcc').replace(/[^a-zA-Z0-9-]/g, '');
+        const port = parseInt(finalPort.toString());
+        
+        // Retry logic: Try up to 2 times
+        let tunnel;
+        let lastError;
+        
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            tunnel = await createTunnelWithTimeout(port, subdomain, 15000);
+            break; // Success, exit retry loop
+          } catch (error) {
+            lastError = error;
+            if (attempt < 2) {
+              spinner5.text = `Retrying tunnel connection (${attempt}/2)...`;
+              await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s between retries
+            }
+          }
+        }
+        
+        if (!tunnel) {
+          throw lastError;
+        }
         
         publicUrl = tunnel.url;
         
@@ -416,11 +453,19 @@ export class SessionManager {
           console.log(chalk.yellow(`\n⚠️  Tunnel error: ${err.message}`));
         });
         
+        tunnel.on('close', () => {
+          // Clean up URL file when tunnel closes
+          if (fs.existsSync(urlFile)) {
+            fs.unlinkSync(urlFile);
+          }
+        });
+        
         spinner5.succeed(`Public URL created: ${chalk.cyan(publicUrl)}`);
       } catch (error) {
         spinner5.warn('Failed to create public tunnel');
         console.log(chalk.yellow('   Session is available locally only'));
         console.log(chalk.gray(`   Error: ${error instanceof Error ? error.message : error}`));
+        console.log(chalk.gray('   Tip: Check https://loca.lt for service status'));
       }
     } catch (error) {
       spinner4.fail('Failed to spawn ttyd process');
