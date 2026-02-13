@@ -453,7 +453,6 @@ export class SessionManager {
       // Based on localtunnel GitHub issues: https://github.com/localtunnel/localtunnel/issues
       // Common issue: Promise hangs when tunnel server is slow/unavailable
       // Solution: Promise.race() with timeout + retry
-      let publicUrl = '';
       const spinner5: Ora = ora('Creating public URL tunnel...').start();
       
       const createTunnelWithTimeout = async (port: number, subdomain: string, timeoutMs: number = 15000): Promise<any> => {
