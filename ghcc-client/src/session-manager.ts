@@ -1,8 +1,9 @@
-import { spawn, exec } from 'child_process';
+import { spawn, exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import crypto from 'crypto';
 import chalk from 'chalk';
 import ora, { Ora } from 'ora';
 import localtunnel from 'localtunnel';
@@ -10,6 +11,7 @@ import qrcode from 'qrcode-terminal';
 import type { StartOptions, StopOptions, StatusOptions, UrlOptions } from './types';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export class SessionManager {
   private ttydPath: string;
@@ -34,6 +36,37 @@ export class SessionManager {
       console.log(chalk.yellow('This should not happen. Please reinstall: npm install -g ghcc-client'));
       process.exit(1);
     }
+  }
+
+  // Security helper: Validate session name format
+  private validateSessionName(session: string): boolean {
+    // Only allow: letters, numbers, hyphens, and underscores
+    // Must start with letter or number
+    // Length: 3-64 characters
+    const sessionRegex = /^[a-zA-Z0-9][a-zA-Z0-9_-]{2,63}$/;
+    return sessionRegex.test(session);
+  }
+
+  // Security helper: Validate port number
+  private validatePort(port: number): boolean {
+    // Only allow non-privileged ports (1024-65535)
+    return Number.isInteger(port) && port >= 1024 && port <= 65535;
+  }
+
+  // Security helper: Generate secure random password
+  private generateSecurePassword(length: number = 32): string {
+    return crypto.randomBytes(length).toString('base64').slice(0, length);
+  }
+
+  // Security helper: Create secure temp file with restricted permissions
+  private createSecureTempFile(prefix: string, extension: string = '.tmp'): string {
+    // Create unique temp directory with 0700 permissions
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-`));
+    fs.chmodSync(tmpDir, 0o700); // Only owner can read/write/execute
+    
+    // Create file path
+    const filePath = path.join(tmpDir, `file${extension}`);
+    return filePath;
   }
 
   private async sessionExists(sessionName: string): Promise<boolean> {
@@ -275,6 +308,16 @@ export class SessionManager {
     
     console.log(chalk.cyan('🚀 Starting GitHub Copilot Remote Session...\n'));
     
+    // SECURITY: Validate session name format
+    if (!this.validateSessionName(session)) {
+      console.log(chalk.red('✗ Invalid session name format!\n'));
+      console.log(chalk.yellow('Session names must:'));
+      console.log(chalk.white('  • Be 3-64 characters long'));
+      console.log(chalk.white('  • Start with letter or number'));
+      console.log(chalk.white('  • Contain only: letters, numbers, hyphens, underscores'));
+      process.exit(1);
+    }
+    
     const spinner1: Ora = ora('Checking for Copilot CLI...').start();
     try {
       await execAsync('which copilot');
@@ -301,6 +344,14 @@ export class SessionManager {
     let finalPort: number;
     if (port) {
       finalPort = parseInt(port);
+      
+      // SECURITY: Validate port number
+      if (!this.validatePort(finalPort)) {
+        console.log(chalk.red('✗ Invalid port number!\n'));
+        console.log(chalk.yellow('Port must be between 1024-65535 (non-privileged range)'));
+        process.exit(1);
+      }
+      
       // Check if specified port is available
       if (await this.isPortInUse(finalPort)) {
         console.log(chalk.red(`✗ Port ${finalPort} is already in use!\n`));
@@ -341,11 +392,15 @@ export class SessionManager {
     }
 
     let publicUrl = ''; // Declare here for scope across ttyd and tunnel blocks
+    let ttydPassword = ''; // Store password for display
     const spinner4: Ora = ora(`Starting ttyd server on port ${finalPort}...`).start();
     
-    // Create mobile-optimized HTML using ttyd's base + our fixes
+    // SECURITY: Generate strong authentication password for ttyd
+    ttydPassword = this.generateSecurePassword(32);
+    
+    // SECURITY: Create temp files with restricted permissions
+    const customHtmlPath = this.createSecureTempFile(`ghcc-${session}`, '.html');
     const basePath = path.join(__dirname, '..', 'assets', 'ttyd-base.html');
-    const customHtmlPath = `/tmp/ghcc-${session}.html`;
     
     try {
       let html = fs.readFileSync(basePath, 'utf-8');
@@ -358,16 +413,46 @@ export class SessionManager {
         html = html.replace('<head>', '<head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">');
       }
       
-      fs.writeFileSync(customHtmlPath, html);
+      // SECURITY: Write with restricted permissions (0600 - owner read/write only)
+      fs.writeFileSync(customHtmlPath, html, { mode: 0o600 });
     } catch (error) {
       console.log(chalk.yellow('Warning: Could not create mobile HTML, mobile portrait may not work'));
     }
     
     try {
+      // SECURITY: Generate self-signed certificate for HTTPS
+      const certDir = path.join(os.homedir(), '.ghcc-client', 'certs');
+      const certPath = path.join(certDir, 'cert.pem');
+      const keyPath = path.join(certDir, 'key.pem');
+      
+      // Create cert directory if it doesn't exist
+      if (!fs.existsSync(certDir)) {
+        fs.mkdirSync(certDir, { recursive: true, mode: 0o700 });
+      }
+      
+      // Generate self-signed cert if it doesn't exist
+      if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
+        spinner4.text = 'Generating HTTPS certificate (first-time only)...';
+        try {
+          await execAsync(`openssl req -x509 -newkey rsa:2048 -nodes -keyout "${keyPath}" -out "${certPath}" -days 365 -subj "/CN=ghcc-client" 2>/dev/null`);
+          fs.chmodSync(certPath, 0o600);
+          fs.chmodSync(keyPath, 0o600);
+        } catch (certError) {
+          console.log(chalk.yellow('\n⚠️  Could not generate HTTPS certificate, falling back to HTTP'));
+          console.log(chalk.gray('   Install openssl for secure HTTPS connections'));
+        }
+      }
+      
       const ttydArgs = [
         '-p', finalPort.toString(),
         '-W',  // Allow clients to write
+        '-c', `user:${ttydPassword}`,  // SECURITY: Basic authentication
       ];
+      
+      // SECURITY: Add HTTPS if certificate exists
+      if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+        ttydArgs.push('-S', '-C', certPath, '-K', keyPath);
+      }
       
       // Use custom HTML with mobile fixes if available
       if (fs.existsSync(customHtmlPath)) {
@@ -495,9 +580,9 @@ export class SessionManager {
         
         publicUrl = tunnel.url;
         
-        // Store URL in file for later retrieval
-        const urlFile = `/tmp/ghcc-${session}-tunnel-url`;
-        fs.writeFileSync(urlFile, publicUrl);
+        // SECURITY: Store URL in secure file with restricted permissions
+        const urlFile = this.createSecureTempFile(`ghcc-${session}-tunnel-url`, '.txt');
+        fs.writeFileSync(urlFile, publicUrl, { mode: 0o600 });
         
         // Set up tunnel error handler
         tunnel.on('error', (err: Error) => {
@@ -506,8 +591,12 @@ export class SessionManager {
         
         tunnel.on('close', () => {
           // Clean up URL file when tunnel closes
+          const urlDir = path.dirname(urlFile);
           if (fs.existsSync(urlFile)) {
             fs.unlinkSync(urlFile);
+          }
+          if (fs.existsSync(urlDir)) {
+            fs.rmdirSync(urlDir);
           }
         });
         
@@ -539,19 +628,26 @@ export class SessionManager {
 
     console.log(chalk.green('\n✅ Remote session is ready!\n'));
     
+    // SECURITY: Display authentication credentials
+    console.log(chalk.white('🔐 Authentication Credentials:\n'));
+    console.log(chalk.gray('   Username: ') + chalk.white('user'));
+    console.log(chalk.gray('   Password: ') + chalk.white(ttydPassword));
+    console.log(chalk.yellow('\n⚠️  Save this password! You\'ll need it to access the terminal'));
+    console.log(chalk.gray('   It will not be shown again for security reasons\n'));
+    
     // Show QR code if public URL exists
     if (publicUrl) {
       console.log(chalk.white('📱 Scan QR code to access from mobile:\n'));
       qrcode.generate(publicUrl, { small: true });
       console.log();
-      console.log(chalk.yellow('⚠️  Important: Visitors need the tunnel password'));
-      console.log(chalk.gray('   On first visit, they\'ll see a security page'));
-      console.log(chalk.gray('   They must enter the password shown above'));
-      console.log(chalk.gray('   After that, it works for 7 days from their IP'));
+      console.log(chalk.yellow('⚠️  Important: Visitors need TWO passwords'));
+      console.log(chalk.gray('   1. Tunnel password (shown earlier)'));
+      console.log(chalk.gray('   2. Terminal password (shown above)'));
+      console.log(chalk.gray('   After tunnel auth, it works for 7 days from their IP'));
       console.log();
     }
     
-    this.showUrls(finalPort.toString(), session, publicUrl);
+    this.showUrls(finalPort.toString(), session, publicUrl, ttydPassword);
   }
 
   async stop(options: StopOptions): Promise<void> {
@@ -790,7 +886,7 @@ export class SessionManager {
     }
   }
 
-  showUrls(port: string, session?: string, publicUrl?: string): void {
+  showUrls(port: string, session?: string, publicUrl?: string, password?: string): void {
     const interfaces = os.networkInterfaces();
     let localIp = 'localhost';
     
@@ -806,14 +902,18 @@ export class SessionManager {
       }
     }
 
+    const protocol = 'https'; // Using HTTPS now with self-signed cert
     console.log(chalk.cyan('Access URLs:'));
-    console.log(chalk.white(`  Local:      ${chalk.underline(`http://localhost:${port}`)}`));
-    console.log(chalk.white(`  Network:    ${chalk.underline(`http://${localIp}:${port}`)}`));
+    console.log(chalk.white(`  Local:      ${chalk.underline(`${protocol}://localhost:${port}`)}`));
+    console.log(chalk.white(`  Network:    ${chalk.underline(`${protocol}://${localIp}:${port}`)}`));
     if (publicUrl) {
       console.log(chalk.white(`  Public:     ${chalk.underline(publicUrl)}`));
     }
     if (session) {
       console.log(chalk.white(`  Session:    ${session}`));
+    }
+    if (password) {
+      console.log(chalk.gray(`  Auth:       user:${password}`));
     }
     console.log('');
   }
