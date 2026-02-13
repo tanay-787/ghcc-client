@@ -35,6 +35,8 @@ program
   .description('GitHub Copilot CLI Remote Client - Access Copilot from anywhere')
   .version('1.0.0')
   .option('-p, --port <port>', 'Port for remote access (auto-assigned if not specified)')
+  .allowExcessArguments(false)
+  .showHelpAfterError('(use --help for usage information)')
   .action(async (options) => {
     const sessionName = generateSessionName();
     
