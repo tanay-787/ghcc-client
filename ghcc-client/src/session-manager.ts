@@ -140,6 +140,17 @@ export class SessionManager {
     }
   }
 
+  private async findAvailablePort(startPort: number = 7681): Promise<number> {
+    let port = startPort;
+    while (await this.isPortInUse(port)) {
+      port++;
+      if (port > 65535) {
+        throw new Error('No available ports found');
+      }
+    }
+    return port;
+  }
+
   private async cleanupOrphanedProcesses(): Promise<void> {
     try {
       // OPTIMIZATION: Skip cleanup if run recently (within 5 minutes)
@@ -261,7 +272,6 @@ export class SessionManager {
 
   async start(options: StartOptions): Promise<void> {
     let { port, session } = options;
-    const isDefaultSession = session === 'copilot-remote';
     
     console.log(chalk.cyan('🚀 Starting GitHub Copilot Remote Session...\n'));
     
@@ -279,33 +289,26 @@ export class SessionManager {
     // Clean up ALL orphaned processes before starting
     await this.cleanupOrphanedProcesses();
 
-    // Auto-increment session name and port if default name is in use
-    let finalSession = session;
-    let finalPort = parseInt(port);
-    
-    if (isDefaultSession && await this.sessionExists(session)) {
-      let counter = 2;
-      while (await this.sessionExists(`${session}-${counter}`)) {
-        counter++;
-      }
-      finalSession = `${session}-${counter}`;
-      
-      // Find first available port starting from default
-      finalPort = parseInt(port);
-      while (await this.isPortInUse(finalPort)) {
-        finalPort++;
-      }
-      
-      if (finalPort !== parseInt(port)) {
-        console.log(chalk.yellow(`Port ${port} in use, using port ${finalPort}\n`));
-      }
-    } else if (!isDefaultSession && await this.sessionExists(session)) {
-      // Custom session name - don't auto-increment, show error
+    // Check if session name already exists
+    if (await this.sessionExists(session)) {
       console.log(chalk.red(`✗ Session "${session}" already exists!\n`));
-      console.log(chalk.yellow('Options:'));
-      console.log(chalk.white(`  • Stop it:     ghcc-client stop -s ${session}`));
-      console.log(chalk.white(`  • Use another: ghcc-client start -s different-name`));
+      console.log(chalk.yellow('This should not happen with auto-generated names.'));
+      console.log(chalk.yellow('Try running the command again.'));
       process.exit(1);
+    }
+    
+    // Auto-assign port if not specified
+    let finalPort: number;
+    if (port) {
+      finalPort = parseInt(port);
+      // Check if specified port is available
+      if (await this.isPortInUse(finalPort)) {
+        console.log(chalk.red(`✗ Port ${finalPort} is already in use!\n`));
+        console.log(chalk.yellow('Try a different port or omit -p to auto-assign.'));
+        process.exit(1);
+      }
+    } else {
+      finalPort = await this.findAvailablePort();
     }
 
     // Note: --continue doesn't work reliably in detached tmux sessions
@@ -314,17 +317,17 @@ export class SessionManager {
     
     const spinner3: Ora = ora('Starting Copilot in tmux...').start();
     try {
-      await execAsync(`tmux new-session -d -s ${finalSession} ${copilotCmd}`);
+      await execAsync(`tmux new-session -d -s ${session} ${copilotCmd}`);
       
       // Wait and verify session is still alive
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Check if session still exists
       try {
-        await execAsync(`tmux has-session -t ${finalSession} 2>/dev/null`);
-        spinner3.succeed(`Copilot started in tmux session "${finalSession}"`);
+        await execAsync(`tmux has-session -t ${session} 2>/dev/null`);
+        spinner3.succeed(`Copilot started in tmux session "${session}"`);
       } catch {
-        spinner3.fail(`Session "${finalSession}" exited immediately`);
+        spinner3.fail(`Session "${session}" exited immediately`);
         console.log(chalk.yellow('\n⚠️  Copilot session closed right after starting.'));
         console.log(chalk.yellow('This might happen if:'));
         console.log(chalk.white('  • You haven\'t logged in: Run "copilot login" first'));
@@ -342,13 +345,13 @@ export class SessionManager {
     
     // Create mobile-optimized HTML using ttyd's base + our fixes
     const basePath = path.join(__dirname, '..', 'assets', 'ttyd-base.html');
-    const customHtmlPath = `/tmp/ghcc-${finalSession}.html`;
+    const customHtmlPath = `/tmp/ghcc-${session}.html`;
     
     try {
       let html = fs.readFileSync(basePath, 'utf-8');
       
       // Replace title
-      html = html.replace(/<title>.*?<\/title>/, `<title>GitHub Copilot - ${finalSession}</title>`);
+      html = html.replace(/<title>.*?<\/title>/, `<title>GitHub Copilot - ${session}</title>`);
       
       // Add viewport meta tag if not present (critical for mobile)
       if (!html.includes('<meta name="viewport"')) {
@@ -375,12 +378,12 @@ export class SessionManager {
       ttydArgs.push('-t', 'fontSize=14');
       ttydArgs.push('-t', 'fontFamily=Consolas,Monaco,Courier New,monospace');
       ttydArgs.push('-t', 'theme={"background":"#1e1e1e","foreground":"#d4d4d4","cursor":"#d4d4d4","selection":"#264f78"}');
-      ttydArgs.push('-t', `titleFixed=GitHub Copilot - ${finalSession}`);
+      ttydArgs.push('-t', `titleFixed=GitHub Copilot - ${session}`);
       ttydArgs.push('-t', 'disableLeaveAlert=true');
       ttydArgs.push('-t', 'disableResizeOverlay=true');
       
       // Add tmux command
-      ttydArgs.push('tmux', 'attach', '-t', finalSession);
+      ttydArgs.push('tmux', 'attach', '-t', session);
       
       const ttyd = spawn(this.ttydPath, ttydArgs, {
         detached: true,
@@ -404,7 +407,7 @@ export class SessionManager {
         console.log(chalk.white('  • tmux session is inaccessible'));
         console.log(chalk.white('  • ttyd binary is corrupted'));
         console.log(chalk.yellow('\nCleaning up tmux session...'));
-        await execAsync(`tmux kill-session -t ${finalSession} 2>/dev/null || true`);
+        await execAsync(`tmux kill-session -t ${session} 2>/dev/null || true`);
         process.exit(1);
       }
       
@@ -417,7 +420,7 @@ export class SessionManager {
         console.log(chalk.red(`\n✗ ttyd started but is not listening on port ${finalPort}\n`));
         console.log(chalk.yellow('Cleaning up...'));
         await execAsync(`kill ${ttydPid} 2>/dev/null || true`);
-        await execAsync(`tmux kill-session -t ${finalSession} 2>/dev/null || true`);
+        await execAsync(`tmux kill-session -t ${session} 2>/dev/null || true`);
         process.exit(1);
       }
       
@@ -428,7 +431,7 @@ export class SessionManager {
       // Main architecture remains process-based
       try {
         const hookCmd = `run-shell "kill ${ttydPid} 2>/dev/null || true"`;
-        await execAsync(`tmux set-hook -t ${finalSession} session-closed "${hookCmd}"`);
+        await execAsync(`tmux set-hook -t ${session} session-closed "${hookCmd}"`);
       } catch (error) {
         // Log error for debugging but don't fail the start
         console.log(chalk.yellow('\n⚠️  Warning: Failed to set up automatic cleanup hook'));
@@ -442,7 +445,7 @@ export class SessionManager {
       } catch {
         console.log(chalk.red('\n✗ ttyd process died after initial startup\n'));
         console.log(chalk.yellow('Cleaning up...'));
-        await execAsync(`tmux kill-session -t ${finalSession} 2>/dev/null || true`);
+        await execAsync(`tmux kill-session -t ${session} 2>/dev/null || true`);
         process.exit(1);
       }
       
@@ -467,7 +470,7 @@ export class SessionManager {
       };
       
       try {
-        const subdomain = finalSession.replace('copilot-remote', 'ghcc').replace(/[^a-zA-Z0-9-]/g, '');
+        const subdomain = session.replace('copilot-remote', 'ghcc').replace(/[^a-zA-Z0-9-]/g, '');
         const port = parseInt(finalPort.toString());
         
         // Retry logic: Try up to 2 times
@@ -494,7 +497,7 @@ export class SessionManager {
         publicUrl = tunnel.url;
         
         // Store URL in file for later retrieval
-        const urlFile = `/tmp/ghcc-${finalSession}-tunnel-url`;
+        const urlFile = `/tmp/ghcc-${session}-tunnel-url`;
         fs.writeFileSync(urlFile, publicUrl);
         
         // Set up tunnel error handler
@@ -531,7 +534,7 @@ export class SessionManager {
       spinner4.fail('Failed to spawn ttyd process');
       console.error(chalk.red('\n✗ Error: ' + (error as Error).message));
       console.log(chalk.yellow('\nCleaning up tmux session...'));
-      await execAsync(`tmux kill-session -t ${finalSession} 2>/dev/null || true`);
+      await execAsync(`tmux kill-session -t ${session} 2>/dev/null || true`);
       process.exit(1);
     }
 
@@ -549,7 +552,7 @@ export class SessionManager {
       console.log();
     }
     
-    this.showUrls(finalPort.toString(), finalSession, publicUrl);
+    this.showUrls(finalPort.toString(), session, publicUrl);
   }
 
   async stop(options: StopOptions): Promise<void> {
@@ -813,8 +816,6 @@ export class SessionManager {
     if (session) {
       console.log(chalk.white(`  Session:    ${session}`));
     }
-    console.log('');
-    console.log(chalk.gray('💡 Tip: Use "ghcc-client url -s <session>" to see QR code again'));
     console.log('');
   }
   
