@@ -121,4 +121,264 @@
     initMobileHandler();
   }
 })();
-</script></body></html>
+</script>
+
+<!-- Mobile Virtual Keyboard Toolbar -->
+<div id="mobile-keyboard-toolbar" style="display: none;">
+  <div class="keyboard-row">
+    <button class="key-btn" data-key="esc">ESC</button>
+    <button class="key-btn" data-key="tab">TAB</button>
+    <button class="key-btn" data-key="shift">SHIFT</button>
+    <button class="key-btn" data-key="up">↑</button>
+    <button class="key-btn" data-key="down">↓</button>
+    <button class="key-btn" data-key="left">←</button>
+    <button class="key-btn" data-key="right">→</button>
+  </div>
+  <div class="keyboard-row">
+    <button class="key-btn" data-key="ctrl-c">Ctrl + C</button>
+    <button class="key-btn" data-key="ctrl-o">Ctrl + O</button>
+    <button class="key-btn" data-key="ctrl-e">Ctrl + E</button>
+  </div>
+</div>
+
+<style>
+#mobile-keyboard-toolbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #1e1e1e;
+  border-top: 1px solid #3e3e3e;
+  padding: 4px;
+  z-index: 9999;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+}
+
+#mobile-keyboard-toolbar .keyboard-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+#mobile-keyboard-toolbar .keyboard-row:last-child {
+  margin-bottom: 0;
+}
+
+#mobile-keyboard-toolbar .key-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #2e2e2e;
+  color: #d4d4d4;
+  border: 1px solid #3e3e3e;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: all 0.1s ease;
+}
+
+#mobile-keyboard-toolbar .key-btn:active {
+  background: #3e3e3e;
+  transform: scale(0.95);
+  border-color: #4e4e4e;
+}
+
+#mobile-keyboard-toolbar .key-btn.active {
+  background: #0e639c;
+  border-color: #1177bb;
+  color: #ffffff;
+}
+
+/* Adjust terminal container when keyboard is visible */
+@media (max-width: 768px) {
+  body.keyboard-visible #terminal-container {
+    padding-bottom: 92px;
+  }
+  
+  body.keyboard-visible #mobile-keyboard-toolbar {
+    display: block !important;
+  }
+}
+</style>
+
+<script>
+// Mobile Virtual Keyboard Controller (WebSocket-based)
+(function() {
+  'use strict';
+  
+  // Store reference to ttyd's WebSocket
+  let ttydSocket = null;
+  
+  // Intercept WebSocket creation to capture ttyd's socket
+  const OriginalWebSocket = window.WebSocket;
+  window.WebSocket = function(...args) {
+    const socket = new OriginalWebSocket(...args);
+    
+    // Store reference to ttyd's WebSocket
+    if (args[0] && args[0].includes('/ws')) {
+      console.log('[mobile-keyboard] Captured ttyd WebSocket');
+      ttydSocket = socket;
+    }
+    
+    return socket;
+  };
+  
+  // Preserve WebSocket prototype and static properties
+  window.WebSocket.prototype = OriginalWebSocket.prototype;
+  window.WebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
+  window.WebSocket.OPEN = OriginalWebSocket.OPEN;
+  window.WebSocket.CLOSING = OriginalWebSocket.CLOSING;
+  window.WebSocket.CLOSED = OriginalWebSocket.CLOSED;
+  
+  // State
+  let modifierKeys = {
+    shift: false
+  };
+  
+  // Key code mappings (using \x notation for better compatibility)
+  const KEY_CODES = {
+    'esc': '\x1b',
+    'tab': '\t',
+    'up': '\x1b[A',
+    'down': '\x1b[B',
+    'left': '\x1b[D',
+    'right': '\x1b[C',
+    'ctrl-c': '\x03',
+    'ctrl-o': '\x0f',
+    'ctrl-e': '\x05'
+  };
+  
+  // Send key to terminal via WebSocket
+  function sendKey(keyCode) {
+    if (!ttydSocket || ttydSocket.readyState !== WebSocket.OPEN) {
+      console.error('[mobile-keyboard] WebSocket not ready, state:', ttydSocket ? ttydSocket.readyState : 'null');
+      return false;
+    }
+    
+    try {
+      // ttyd protocol: '0' prefix for input data
+      const message = '0' + keyCode;
+      ttydSocket.send(message);
+      console.log('[mobile-keyboard] Sent key, code:', keyCode.charCodeAt ? keyCode.charCodeAt(0) : keyCode);
+      return true;
+    } catch (error) {
+      console.error('[mobile-keyboard] Failed to send key:', error);
+      return false;
+    }
+  }
+  
+  // Handle key button click
+  function handleKeyPress(key) {
+    console.log('[mobile-keyboard] Key pressed:', key);
+    
+    // Handle SHIFT modifier key toggle
+    if (key === 'shift') {
+      modifierKeys.shift = !modifierKeys.shift;
+      updateModifierUI();
+      return;
+    }
+    
+    // Get key code
+    let keyCode = KEY_CODES[key];
+    
+    if (!keyCode) {
+      console.warn('[mobile-keyboard] Unknown key:', key);
+      return;
+    }
+    
+    // Handle SHIFT+TAB (toggle plan/shell mode in Copilot CLI)
+    if (modifierKeys.shift && key === 'tab') {
+      keyCode = '\x1b[Z';  // Shift+Tab escape sequence
+      console.log('[mobile-keyboard] SHIFT+TAB active');
+    }
+    
+    // Send the key
+    sendKey(keyCode);
+    
+    // Reset SHIFT modifier after key press
+    modifierKeys.shift = false;
+    updateModifierUI();
+  }
+  
+  // Update modifier button visual state
+  function updateModifierUI() {
+    const shiftBtn = document.querySelector('[data-key="shift"]');
+    
+    if (shiftBtn) {
+      shiftBtn.classList.toggle('active', modifierKeys.shift);
+    }
+  }
+  
+  // Detect mobile device
+  function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           (window.innerWidth <= 768);
+  }
+  
+  // Show/hide keyboard based on device
+  function initKeyboard() {
+    const toolbar = document.getElementById('mobile-keyboard-toolbar');
+    
+    if (!toolbar) {
+      console.warn('[mobile-keyboard] Toolbar element not found');
+      return;
+    }
+    
+    // Only show on mobile devices
+    if (isMobileDevice()) {
+      toolbar.style.display = 'block';
+      document.body.classList.add('keyboard-visible');
+      console.log('[mobile-keyboard] Mobile keyboard enabled');
+      
+      // Attach click handlers to all key buttons
+      const buttons = toolbar.querySelectorAll('.key-btn');
+      buttons.forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          const key = this.getAttribute('data-key');
+          handleKeyPress(key);
+        });
+        
+        // Prevent double-tap zoom on buttons
+        btn.addEventListener('touchend', function(e) {
+          e.preventDefault();
+          this.click();
+        });
+      });
+      
+      console.log('[mobile-keyboard] Initialized ' + buttons.length + ' key buttons');
+    } else {
+      console.log('[mobile-keyboard] Desktop detected, keyboard hidden');
+    }
+  }
+  
+  // Initialize when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initKeyboard);
+  } else {
+    initKeyboard();
+  }
+  
+  // Re-check on window resize
+  window.addEventListener('resize', function() {
+    const toolbar = document.getElementById('mobile-keyboard-toolbar');
+    if (toolbar) {
+      if (isMobileDevice()) {
+        toolbar.style.display = 'block';
+        document.body.classList.add('keyboard-visible');
+      } else {
+        toolbar.style.display = 'none';
+        document.body.classList.remove('keyboard-visible');
+      }
+    }
+  });
+  
+})();
+</script>
+
+</body></html>
