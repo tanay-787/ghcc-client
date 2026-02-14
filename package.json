@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "ghcc-client": "./dist/cli.js"
+    "ghcc-client": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc && npm run copy-assets",
@@ -31,7 +31,7 @@
   "license": "GPL-3.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tanay-787/ghcc-client.git"
+    "url": "git+https://github.com/tanay-787/ghcc-client.git"
   },
   "files": [
     "dist/",
@@ -55,5 +55,8 @@
   },
   "engines": {
     "node": ">=14.0.0"
+  },
+  "overrides": {
+    "axios": ">=0.30.0"
   }
 }
