@@ -11,9 +11,11 @@
 #### ttyd Basic Authentication
 - Every terminal session is protected with HTTP Basic Authentication
 - Username: `user`
-- Password: Randomly generated 32-character base64 string
+- Password: Randomly generated **6-character** base64 string
 - Password is displayed **once** during session start and must be saved
 - No session can be accessed without this password
+- **Mobile-friendly**: Easy to type on mobile keyboards vs 32-char passwords
+- **Security**: 6 base64 chars = 68.7 billion combinations (base64 alphabet: A-Z, a-z, 0-9, +, /)
 
 #### Localtunnel IP-based Access Control
 - Public URLs (via localtunnel) require additional tunnel password
