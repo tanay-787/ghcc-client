@@ -1,6 +1,6 @@
 {
   "name": "ghcc-client",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Remote access client for GitHub Copilot CLI - Access your Copilot session from mobile or any browser",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
