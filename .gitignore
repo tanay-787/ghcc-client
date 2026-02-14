@@ -6,3 +6,4 @@ dist/
 lib/
 bin/
 *.tgz
+.idx/

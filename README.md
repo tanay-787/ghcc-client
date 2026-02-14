@@ -210,6 +210,13 @@ We welcome contributions! Please follow these steps:
 4. **Open a pull request** — Include a clear description of the problem and solution
 5. **Provide testing steps** — Help reviewers understand how to test your changes
 
+### Development setup
+
+- Run `npm install` to install dependencies.
+- Run `npm run build` to compile TypeScript sources.
+- If you want to set up the binaries (as the postinstall step would), run `npm run postinstall` manually after building.
+- Note: The postinstall script is only triggered automatically when installing from npm (not from source).
+
 For bug reports, include:
 - Steps to reproduce
 - Expected vs. actual behavior

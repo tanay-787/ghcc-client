@@ -5,15 +5,14 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "ghcc-client": "./dist/cli.js",
-    "ghcc": "./dist/cli.js"
+    "ghcc-client": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc && npm run copy-assets",
     "copy-assets": "mkdir -p dist/assets && cp -r assets/* dist/assets/",
     "dev": "tsc --watch",
     "prepublishOnly": "npm run build",
-    "postinstall": "node dist/setup.js",
+    "postinstall": "[ -f dist/setup.js ] && node dist/setup.js || echo 'dist/setup.js not found, skipping postinstall'",
     "clean": "rm -rf dist",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -28,11 +27,11 @@
     "terminal",
     "typescript"
   ],
-  "author": "Your Name",
+  "author": "Tanay Gupte",
   "license": "GPL-3.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/ghcc-client.git"
+    "url": "https://github.com/tanay-787/ghcc-client.git"
   },
   "files": [
     "dist/",
