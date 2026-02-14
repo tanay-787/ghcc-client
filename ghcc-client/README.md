@@ -1,470 +1,251 @@
-# ghcc-client
+# GhCC-Client
 
-**GitHub Copilot CLI Remote Client** - Access your GitHub Copilot CLI session from anywhere - mobile, browser, or terminal.
+A Node.js CLI utility tool that allows its users to remotely interact with a GitHub Copilot CLI session from their mobiles, tablets and any other devices that support web-browsers.
 
-[![npm version](https://img.shields.io/npm/v/ghcc-client.svg)](https://www.npmjs.com/package/ghcc-client)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## Features
 
-## ✨ Features
+- **Persistent Copilot sessions** — Runs Copilot CLI inside tmux so your session survives disconnects, terminal closures, and even host reboots
+- **Browser-based terminal** — Uses ttyd to expose the tmux session as a web interface compatible with mobile and desktop browsers
+- **Native keyboard toolbar UI** — Custom mobile keyboard toolbar components inspired by Termux app, providing quick access to common terminal shortcuts (Ctrl, Alt, Tab, arrow keys, etc.) for seamless mobile interactions
+- **Portrait-based resizing** — Automatically adapts terminal layout for portrait and landscape orientations, optimizing readability on mobile devices
+- **Public tunneling** — Optional localtunnel integration creates temporary public URLs with QR codes for quick mobile access
 
-- 🌐 **Remote Access** - Control Copilot CLI from your phone, tablet, or any browser
-- 🔄 **Session Continuity** - Start on desktop, continue on mobile, same conversation
-- 📱 **Mobile Friendly** - Full terminal access optimized for mobile browsers
-- 🚀 **Easy Setup** - One command to start, zero configuration needed
-- 🔒 **Secure** - Runs locally, your code stays private
+## Requirements
 
-## 🎯 Use Cases
+Before using ghcc-client, ensure the following are installed and configured:
 
-- Code from your phone while away from desk
-- Continue Copilot conversations across devices
-- Demo Copilot to others remotely
-- Access development environment from anywhere
+### 1. Node.js 14.0 or newer
 
-## 📦 Installation
+**Install from:** [https://nodejs.org/](https://nodejs.org/)
 
-### Platform Support
+### 2. tmux (Terminal Multiplexer)
 
-- ✅ **Linux** (Ubuntu, Debian, Fedora, Arch, etc.)
-- ✅ **macOS** (Intel & Apple Silicon)
-- ⚠️ **Windows** via WSL2 (see below)
+**Official docs:** [https://github.com/tmux/tmux/wiki](https://github.com/tmux/tmux/wiki)
 
-### Windows Users: Install WSL2 First
+Required for persistent Copilot sessions that survive disconnects, terminal closures, and reboots.
 
-ghcc-client requires WSL2 (Windows Subsystem for Linux) on Windows.
+- **Linux:** Available in default repos. Install with your package manager (apt, dnf, pacman, etc.)
+- **macOS:** Pre-installed or available via Homebrew
+- **Windows:** Requires WSL2 (see point 5)
 
-**Quick WSL2 Installation:**
 
-```powershell
-# Open PowerShell as Administrator and run:
-wsl --install
+### 3. GitHub Copilot CLI
 
-# Restart your computer
-```
-
-**Official Guide:** [Microsoft WSL Installation Guide](https://docs.microsoft.com/en-us/windows/wsl/install)
-
-**After WSL2 is installed:**
-
-```bash
-# Open WSL terminal (Ubuntu) and install ghcc-client:
-wsl
-npm install -g ghcc-client
-
-# Use it normally - access from Windows browser works!
-ghcc-client start
-# Then open: http://localhost:7681 in your Windows browser
-```
-
-**Why WSL2?** ttyd and tmux require Unix/Linux environment. WSL2 provides full Linux compatibility on Windows.
-
----
-
-### Option 1: npm (Recommended)
-
-```bash
-npm install -g ghcc-client
-```
-
-### Option 2: From GitHub Release
-
-```bash
-npm install -g https://github.com/YOUR_USERNAME/ghcc-client/releases/download/v1.0.0/ghcc-client-1.0.0.tgz
-```
-
-### Option 3: Install Script
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/ghcc-client/main/install.sh | bash
-```
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) 14 or higher
-- [GitHub Copilot CLI](https://www.npmjs.com/package/@github/copilot) installed
-- [tmux](https://github.com/tmux/tmux) (usually pre-installed on Linux/Mac)
-
-### Start Remote Session
-
-```bash
-ghcc-client start
-```
-
-Output:
-```
-🚀 Starting GitHub Copilot Remote Session...
-
-✔ Copilot CLI found
-✔ Copilot started in tmux session "copilot-remote"
-✔ ttyd server started on port 7681
-
-✅ Remote session is ready!
-
-Access URLs:
-  Desktop Browser: http://localhost:7681
-  Mobile Browser:  http://10.88.0.3:7681
-  Session Name:    copilot-remote
-
-💡 Tip: Use "ghcc-client url" to see these URLs again
-```
-
-### First Time Setup
-
-When you first connect via browser, login using the interactive command:
-
-```bash
-# Inside the browser terminal:
-/login
-```
-
-Follow the OAuth flow to authenticate with GitHub.
-
-### Session Management
-
-Use Copilot's built-in commands in the browser terminal:
-
-```bash
-/resume        # Switch between your sessions
-/clear         # Start a fresh conversation
-/model         # Change AI model
-/help          # See all available commands
-```
-
-### Access from Mobile
-
-1. Note the "Mobile Browser" URL from output
-2. Open that URL on your phone
-3. You'll see the Copilot CLI terminal
-4. Type and interact just like on desktop!
-
-## 📖 Commands
-
-### `ghcc-client start`
-
-Start a remote Copilot session
-
-```bash
-ghcc-client start                    # Default: port 7681, session "copilot-remote"
-ghcc-client start -p 8080            # Custom port
-ghcc-client start -s my-session      # Custom session name
-```
-
-**Options:**
-- `-p, --port <port>` - Port for remote access (default: 7681)
-- `-s, --session <name>` - tmux session name (default: copilot-remote)
-
-### `ghcc-client stop`
-
-Stop the remote session
-
-```bash
-ghcc-client stop                     # Stop default session
-ghcc-client stop -s my-session       # Stop specific session
-```
-
-### `ghcc-client status`
-
-Check session status
-
-```bash
-ghcc-client status
-```
-
-Output:
-```
-📊 Session Status
-
-✅ tmux session "copilot-remote" is running
-   Started: 2/11/2026, 11:30:00 AM
-✅ ttyd server is running
-   Port: 7681
-```
-
-### `ghcc-client url`
-
-Show access URLs
-
-```bash
-ghcc-client url                      # Default port 7681
-ghcc-client url -p 8080              # Custom port
-```
-
----
-
-## 🔧 How It Works
-
-```
-┌──────────────────────────────────────────┐
-│  Your Computer                           │
-│  ┌────────────────────────────────────┐  │
-│  │  tmux Session                      │  │
-│  │  ┌──────────────────────────────┐  │  │
-│  │  │  Copilot CLI                 │  │  │
-│  │  │  (running and persistent)    │  │  │
-│  │  └──────────────────────────────┘  │  │
-│  └────────────────────────────────────┘  │
-│         ▲                       ▲         │
-│         │                       │         │
-│  [Desktop Terminal]      [ttyd Server]   │
-│   tmux attach              Port 7681      │
-└──────────────────────────────┼────────────┘
-                               │
-                          WebSocket
-                               │
-                  ┌────────────┴────────────┐
-                  │                         │
-            [Mobile Browser]          [Desktop Browser]
-```
-
-**Components:**
-
-1. **tmux** - Keeps Copilot CLI session running persistently
-2. **ttyd** - Exposes terminal over WebSocket for browser access
-3. **ghcc-client** - Manages everything with simple commands
-
-**Why this works:**
-- tmux keeps session alive even when disconnected
-- Multiple clients can connect to same session
-- All changes sync in real-time across devices
-
-## 🎨 Usage Examples
-
-### Work on the Go
-
-```bash
-# At desk: Start session
-ghcc-client start
-
-# Step away, pull out phone
-# Open: http://YOUR_IP:7681
-# Continue conversation from phone - full session continuity!
-```
-
-### Multiple Devices
-
-```bash
-# Desktop browser: http://localhost:7681
-# Mobile browser: http://IP:7681
-# Terminal: tmux attach -t copilot-remote
-
-# All three see the SAME session!
-# Type on any device, others update instantly
-```
-
-### Demo/Pair Programming
-
-```bash
-# Start session
-ghcc-client start
-
-# Share URL with colleague
-# They can watch (read-only) or participate
-
-# Everyone sees same Copilot responses
-```
-
-## 🔐 Security
-
-⚠️ **Current version has NO authentication!**
-
-The ttyd server is accessible to anyone on your network. For production use:
-
-### Add Authentication
-
-Authentication requires modifying the compiled code or using a reverse proxy.
-
-**Option 1: Use ttyd authentication (requires building from source)**
-
-**Option 2: Reverse Proxy (Recommended)**
-
-Use nginx or caddy with authentication:
-
-```nginx
-# nginx config
-location / {
-    auth_basic "Restricted";
-    auth_basic_user_file /etc/nginx/.htpasswd;
-    proxy_pass http://localhost:7681;
-}
-```
-
-### Use SSH Tunnel (Recommended)
-
-Instead of exposing port directly:
-
-```bash
-# On server
-ghcc-client start
-
-# On client (your phone via SSH)
-ssh -L 7681:localhost:7681 user@server
-
-# Then access: http://localhost:7681 on phone
-```
-
-### Firewall
-
-Only allow connections from specific IPs:
-
-```bash
-# Linux
-sudo ufw allow from 192.168.1.0/24 to any port 7681
-```
-
-## 🐛 Troubleshooting
-
-### Windows: "Platform not supported"
-
-You need WSL2! See installation section above.
-
-**Quick fix:**
-```powershell
-# PowerShell as Administrator
-wsl --install
-# Restart computer, then install in WSL
-```
-
-### "Copilot CLI not found"
-
-Install GitHub Copilot CLI:
+**Install from:** [https://github.com/github/copilot-cli](https://github.com/github/copilot-cli)
 
 ```bash
 npm install -g @github/copilot
 ```
 
-### "tmux not found"
-
-Install tmux:
-
-```bash
-# Ubuntu/Debian/WSL
-sudo apt-get install tmux
-
-# macOS
-brew install tmux
-```
-
-### "Port already in use"
-
-Use a different port:
+**Authentication (Recommended):**
+While you *can* authenticate directly within your ghcc-client session, it's recommended to authenticate beforehand for better security and reliability:
 
 ```bash
-ghcc-client start -p 8080
+copilot login
 ```
 
-### Can't connect from mobile
+### 4. ttyd (Web Terminal)
 
-1. Check firewall allows port 7681
-2. Ensure mobile is on same network
-3. Try IP address instead of hostname
-4. Check with: `curl http://localhost:7681` on server
-5. **Windows/WSL:** Make sure you're using the WSL IP, not Windows IP
+**Good news:** ttyd binaries are bundled with ghcc-client for your operating system, so no separate installation needed.
 
-### Session keeps dying
+**Official docs:** [https://github.com/tsl0922/ttyd](https://github.com/tsl0922/ttyd)
 
-Check tmux session status and logs:
+### 5. Windows Users: WSL2 Required
+
+On Windows, tmux is not supported by default and is available via **WSL2 (Windows Subsystem for Linux 2)**.
+
+**Quick setup:**
+
+```powershell
+# PowerShell as Administrator
+wsl --install
+```
+
+Then install in WSL:
+```bash
+sudo apt-get update
+sudo apt-get install nodejs npm tmux
+npm install -g ghcc-client
+```
+
+**Official guide for WSL:** [https://learn.microsoft.com/en-us/windows/wsl/install](https://learn.microsoft.com/en-us/windows/wsl/install)
+
+## Installation
+
+### From npm (Recommended)
 
 ```bash
-ghcc-client status
-tmux attach -t copilot-remote  # See Copilot error messages directly
+npm install -g ghcc-client
 ```
 
-### WSL2 specific issues
-
-**Can't access from Windows browser:**
-```bash
-# In WSL, check your IP:
-ip addr show eth0 | grep inet
-
-# Use that IP in Windows browser:
-# http://WSL_IP:7681
-```
-
-**Or use localhost (Windows 11+):**
-```
-http://localhost:7681
-```
-
-## 📱 Mobile App Integration
-
-For a native mobile app, use React Native WebView:
-
-```javascript
-import { WebView } from 'react-native-webview';
-
-export default function App() {
-  return (
-    <WebView 
-      source={{ uri: 'http://YOUR_SERVER_IP:7681' }}
-      style={{ flex: 1 }}
-    />
-  );
-}
-```
-
-## 🤝 Contributing
-
-Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
-
-### Development
-
-This project is written in **TypeScript** for type safety and better developer experience.
-
-**Setup:**
+### From source
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ghcc-client.git
+git clone https://github.com/tanay-787/ghcc-client.git
 cd ghcc-client
 npm install
+npm run build
+npm link   # Optional: make CLI available globally for testing
 ```
 
-**Build:**
+## Getting Started
+
+### 1. Start a session
 
 ```bash
-npm run build        # Compile TypeScript to JavaScript
-npm run dev          # Watch mode (auto-rebuild on changes)
-npm run clean        # Clean dist/ folder
+# Start with auto-assigned port
+ghcc-client
+
+# Or specify a port
+ghcc-client -p 7681
 ```
 
-**Local testing:**
+### 2. Access from browser
+
+Open the Access URLs in any browser. The output will show:
+- Local address: `http://localhost:7681` (or your chosen port)
+- Public URL: if tunneling is enabled (scan the QR code for easier mobile access)
+
+### 3. Stop the session
+
+Press `Ctrl+C` to stop, or use `/quit` command inside the Copilot CLI session.
+
+## CLI Reference
+
+```
+ghcc-client [options]
+
+Options:
+  -p, --port <port>    Specify port for ttyd (default: auto-assign)
+  --help               Display help and exit
+  --public             Use localtunnel to generate public access URLs
+```
+
+## How It Works
+
+ghcc-client orchestrates three core components:
+
+| Component | Role |
+|-----------|------|
+| **tmux** | Terminal multiplexer that keeps the Copilot session alive and persistent |
+| **ttyd** | WebSocket-based terminal server that exposes tmux to HTTP clients |
+| **localtunnel** (optional) | Creates temporary public URLs for remote browser access with QR codes |
+
+The workflow:
+1. ghcc-client spawns a tmux session and launches Copilot CLI within it
+2. ttyd binds to the specified port and serves the tmux session over HTTP/WebSocket
+3. Any browser can connect and interact with the terminal
+4. The session remains alive even if the browser disconnects or closes
+5. Optional public tunneling allows access from outside your local network
+
+
+## Security Considerations
+
+**Public tunnels expose your terminal to the internet.** Review these practices:
+
+- Treat all data visible in a publicly tunneled session as potentially visible to anyone with the URL
+- Never expose secrets, API keys, or sensitive credentials in a public session
+- Review firewall and network access control policies before enabling public tunnels
+- Localtunnel URLs are temporary and expire when the session ends
+
+For sensitive operations, always use a local connection (`http://localhost:PORT`) or a private network.
+
+## Troubleshooting
+
+### Common issues and solutions
+
+| Issue | Solution |
+|-------|----------|
+| **"Copilot CLI not found"** | Install and authenticate: `npm install -g @github/copilot && copilot auth login` |
+| **"tmux not found"** | Install tmux: `brew install tmux` (macOS) or `sudo apt-get install tmux` (Linux/WSL) |
+| **"ttyd binary not found"** | Reinstall the package or manually place the correct ttyd binary in `binaries/` |
+| **"Port already in use"** | Use a different port: `ghcc-client -p 8080` or stop the conflicting service |
+| **Windows: Cannot connect** | Ensure you're running inside WSL2 and accessing via WSL IP or `localhost` from WSL |
+
+### Enable debug logging
+
+If you encounter issues, check the terminal output for error messages. The client will report failures during startup.
+
+## Development
+
+### Local setup
 
 ```bash
-npm link             # Link package globally
-ghcc-client start    # Test your changes
-npm unlink           # Unlink when done
+# Clone and install dependencies
+git clone https://github.com/tanay-787/ghcc-client.git
+cd ghcc-client
+npm install
+
+# Build the project
+npm run build
+
+# Link for local testing
+npm link
+ghcc-client
+
+# Unlink when finished
+npm unlink
 ```
 
-**Project structure:**
+### Project structure
 
 ```
 ghcc-client/
-├── src/                      # TypeScript source
-│   ├── cli.ts               # CLI commands
-│   ├── session-manager.ts   # Core logic
-│   ├── types.ts             # TypeScript interfaces
-│   └── setup.ts             # Post-install script
-├── dist/                    # Compiled JavaScript (git ignored)
-├── binaries/                # ttyd binaries for each platform
-└── package.json
+├── src/              # TypeScript source code
+├── dist/             # Compiled JavaScript output
+├── assets/           # Static HTML/CSS for browser interface
+├── binaries/         # Platform-specific ttyd executables
+├── package.json      # Dependencies and build scripts
+├── tsconfig.json     # TypeScript configuration
+└── README.md         # This file
 ```
 
-## 📝 License
+## Contributing
 
-MIT © [Your Name]
+We welcome contributions! Please follow these steps:
 
-## 🙏 Credits
+1. **Discuss larger changes** — Open an issue to discuss your idea before implementing
+2. **Create a feature branch** — `git checkout -b feature/your-feature-name`
+3. **Implement and test** — Write code, test thoroughly, and verify no regressions
+4. **Open a pull request** — Include a clear description of the problem and solution
+5. **Provide testing steps** — Help reviewers understand how to test your changes
 
-- [ttyd](https://github.com/tsl0922/ttyd) - Awesome terminal over WebSocket
-- [tmux](https://github.com/tmux/tmux) - Terminal multiplexer
-- [GitHub Copilot CLI](https://github.com/github/copilot-cli) - AI pair programmer
+For bug reports, include:
+- Steps to reproduce
+- Expected vs. actual behavior
+- Your environment (OS, Node.js version, Copilot CLI version)
 
-## 📮 Support
+## License
 
-- 🐛 [Report bugs](https://github.com/YOUR_USERNAME/ghcc-client/issues)
-- 💡 [Request features](https://github.com/YOUR_USERNAME/ghcc-client/issues)
-- 💬 [Discussions](https://github.com/YOUR_USERNAME/ghcc-client/discussions)
+This project is licensed under the **GNU General Public License v3.0** (GPL-3.0).
+
+See the [LICENSE](./LICENSE) file for full details.
+
+```
+Copyright (c) 2026 All rights reserved - Licensed under GPL-3.0
+```
+
+## Dependencies
+
+This project relies on the following third-party components:
+
+| Component | Purpose |
+|-----------|---------|
+| **ttyd** | Terminal-to-web server using WebSockets and HTTP |
+| **tmux** | Session persistence and terminal multiplexing |
+| **localtunnel** | Optional public URL and tunneling for remote access |
+| **qrcode-terminal** | QR code generation for mobile access links |
+
+## Support & Feedback
+
+- **GitHub Profile:** [tanay-787](https://github.com/tanay-787)
+- **Bug reports & features:** [Issue tracker](https://github.com/tanay-787/ghcc-client/issues)
+- **General discussion:** [Discussions](https://github.com/tanay-787/ghcc-client/discussions)
+- **Security concerns:** See [SECURITY.md](./SECURITY.md)
+
+Have questions or ideas? Open an issue—we're here to help!
 
 ---
 
-**Made with ❤️ for remote coding**
+**Co-authored by:** Tanay Gupte & GitHub Copilot CLI  
+**Last updated:** 2026 | Built with TypeScript and Node.js

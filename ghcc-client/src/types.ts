@@ -1,19 +1,12 @@
 export interface StartOptions {
-  port: string;
+  port?: string;
   session: string;
+  public?: boolean;
 }
 
 export interface StopOptions {
   session?: string;
   all?: boolean;
-}
-
-export interface StatusOptions {
-  session?: string;
-}
-
-export interface UrlOptions {
-  session?: string;
 }
 
 export interface SessionInfo {

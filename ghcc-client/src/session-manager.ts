@@ -8,7 +8,7 @@ import chalk from 'chalk';
 import ora, { Ora } from 'ora';
 import localtunnel from 'localtunnel';
 import qrcode from 'qrcode-terminal';
-import type { StartOptions, StopOptions, StatusOptions, UrlOptions } from './types';
+import type { StartOptions, StopOptions } from './types';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -90,41 +90,6 @@ export class SessionManager {
   }
 
   // Batch method: Get all ttyd processes at once (performance optimization)
-  private async getAllTtydProcesses(): Promise<Map<string, { pid: string; port: string }>> {
-    const processMap = new Map<string, { pid: string; port: string }>();
-    
-    try {
-      // Single pgrep call for all copilot-remote ttyd processes
-      const { stdout: pids } = await execAsync('pgrep -f "ttyd.*copilot-remote" 2>/dev/null || true');
-      const pidList = pids.trim().split('\n').filter(p => p);
-      
-      for (const pid of pidList) {
-        if (!pid) continue;
-        
-        try {
-          // Get command line to extract session and port
-          const { stdout: cmdline } = await execAsync(`ps -p ${pid} -o args= 2>/dev/null`);
-          
-          // Extract session name
-          const sessionMatch = cmdline.match(/attach -t (copilot-remote[^\s]*)/);
-          if (!sessionMatch) continue;
-          const sessionName = sessionMatch[1];
-          
-          // Extract port
-          const portMatch = cmdline.match(/-p (\d+)/);
-          const port = portMatch ? portMatch[1] : '';
-          
-          processMap.set(sessionName, { pid, port });
-        } catch {
-          // Skip this process if we can't parse it
-        }
-      }
-    } catch {
-      // Return empty map on error
-    }
-    
-    return processMap;
-  }
 
   // Get port number from ttyd process
   private async getTtydPort(pid: string): Promise<string | null> {
@@ -204,8 +169,8 @@ export class SessionManager {
       
       // Strategy: Use actual running processes as source of truth
       
-      // 1. Find all running ttyd processes for copilot-remote
-      const { stdout: ttydOutput } = await execAsync('pgrep -f "ttyd.*copilot-remote" 2>/dev/null || true');
+      // 1. Find all running ttyd processes for ghcc-session
+      const { stdout: ttydOutput } = await execAsync('pgrep -f "ttyd.*ghcc-session" 2>/dev/null || true');
       const ttydPids = ttydOutput.trim().split('\n').filter(p => p);
       
       for (const pid of ttydPids) {
@@ -214,7 +179,7 @@ export class SessionManager {
         try {
           // Get session name from command line
           const { stdout: cmdline } = await execAsync(`ps -p ${pid} -o args= 2>/dev/null`);
-          const match = cmdline.match(/attach -t (copilot-remote[^\s]*)/);
+          const match = cmdline.match(/attach -t (ghcc-session[^\s]*)/);
           
           if (match) {
             const sessionName = match[1];
@@ -250,7 +215,7 @@ export class SessionManager {
       
       // 2. Find all tmux sessions and check if they have ttyd
       const { stdout: tmuxOutput } = await execAsync('tmux list-sessions -F "#{session_name}" 2>/dev/null || true');
-      const sessions = tmuxOutput.trim().split('\n').filter(s => s && s.startsWith('copilot-remote'));
+      const sessions = tmuxOutput.trim().split('\n').filter(s => s && s.startsWith('ghcc-session'));
       
       for (const sessionName of sessions) {
         // Check if there's a ttyd for this session
@@ -393,10 +358,12 @@ export class SessionManager {
 
     let publicUrl = ''; // Declare here for scope across ttyd and tunnel blocks
     let ttydPassword = ''; // Store password for display
+    let tunnelPassword = ''; // Store tunnel password for display
+    let httpsEnabled = false; // Track if HTTPS is actually available
     const spinner4: Ora = ora(`Starting ttyd server on port ${finalPort}...`).start();
     
     // SECURITY: Generate strong authentication password for ttyd
-    ttydPassword = this.generateSecurePassword(32);
+    ttydPassword = this.generateSecurePassword(6);
     
     // SECURITY: Create temp files with restricted permissions
     const customHtmlPath = this.createSecureTempFile(`ghcc-${session}`, '.html');
@@ -452,6 +419,7 @@ export class SessionManager {
       // SECURITY: Add HTTPS if certificate exists
       if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
         ttydArgs.push('-S', '-C', certPath, '-K', keyPath);
+        httpsEnabled = true;
       }
       
       // Use custom HTML with mobile fixes if available
@@ -476,7 +444,7 @@ export class SessionManager {
       });
       
       const ttydPid = ttyd.pid!;
-      ttyd.unref();
+      // Note: Don't call ttyd.unref() - we want this process to keep the event loop alive
       
       // Wait for ttyd to start
       await new Promise(resolve => setTimeout(resolve, 1500));
@@ -534,89 +502,92 @@ export class SessionManager {
         process.exit(1);
       }
       
-      // Create public tunnel with timeout and retry logic
-      // Based on localtunnel GitHub issues: https://github.com/localtunnel/localtunnel/issues
-      // Common issue: Promise hangs when tunnel server is slow/unavailable
-      // Solution: Promise.race() with timeout + retry
-      const spinner5: Ora = ora('Creating public URL tunnel...').start();
-      
-      const createTunnelWithTimeout = async (port: number, subdomain: string, timeoutMs: number = 15000): Promise<any> => {
-        const tunnelPromise = localtunnel({ 
-          port,
-          subdomain
-        });
+      // Create public tunnel ONLY if --public flag is provided
+      if (options.public) {
+        // Create public tunnel with timeout and retry logic
+        // Based on localtunnel GitHub issues: https://github.com/localtunnel/localtunnel/issues
+        // Common issue: Promise hangs when tunnel server is slow/unavailable
+        // Solution: Promise.race() with timeout + retry
+        const spinner5: Ora = ora('Creating public URL tunnel...').start();
         
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Tunnel connection timeout after ' + (timeoutMs/1000) + 's')), timeoutMs);
-        });
+        const createTunnelWithTimeout = async (port: number, subdomain: string, timeoutMs: number = 15000): Promise<any> => {
+          const tunnelPromise = localtunnel({ 
+            port,
+            subdomain
+          });
+          
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Tunnel connection timeout after ' + (timeoutMs/1000) + 's')), timeoutMs);
+          });
+          
+          return Promise.race([tunnelPromise, timeoutPromise]);
+        };
         
-        return Promise.race([tunnelPromise, timeoutPromise]);
-      };
-      
-      try {
-        const subdomain = session.replace('copilot-remote', 'ghcc').replace(/[^a-zA-Z0-9-]/g, '');
-        const port = parseInt(finalPort.toString());
-        
-        // Retry logic: Try up to 2 times
-        let tunnel;
-        let lastError;
-        
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          try {
-            tunnel = await createTunnelWithTimeout(port, subdomain, 15000);
-            break; // Success, exit retry loop
-          } catch (error) {
-            lastError = error;
-            if (attempt < 2) {
-              spinner5.text = `Retrying tunnel connection (${attempt}/2)...`;
-              await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s between retries
+        try {
+          const subdomain = session.replace('ghcc-session', 'ghcc').replace(/[^a-zA-Z0-9-]/g, '');
+          const port = parseInt(finalPort.toString());
+          
+          // Retry logic: Try up to 2 times
+          let tunnel;
+          let lastError;
+          
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              tunnel = await createTunnelWithTimeout(port, subdomain, 15000);
+              break; // Success, exit retry loop
+            } catch (error) {
+              lastError = error;
+              if (attempt < 2) {
+                spinner5.text = `Retrying tunnel connection (${attempt}/2)...`;
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s between retries
+              }
             }
           }
-        }
-        
-        if (!tunnel) {
-          throw lastError;
-        }
-        
-        publicUrl = tunnel.url;
-        
-        // SECURITY: Store URL in secure file with restricted permissions
-        const urlFile = this.createSecureTempFile(`ghcc-${session}-tunnel-url`, '.txt');
-        fs.writeFileSync(urlFile, publicUrl, { mode: 0o600 });
-        
-        // Set up tunnel error handler
-        tunnel.on('error', (err: Error) => {
-          console.log(chalk.yellow(`\n⚠️  Tunnel error: ${err.message}`));
-        });
-        
-        tunnel.on('close', () => {
-          // Clean up URL file when tunnel closes
-          const urlDir = path.dirname(urlFile);
-          if (fs.existsSync(urlFile)) {
-            fs.unlinkSync(urlFile);
+          
+          if (!tunnel) {
+            throw lastError;
           }
-          if (fs.existsSync(urlDir)) {
-            fs.rmdirSync(urlDir);
+          
+          publicUrl = tunnel.url;
+          
+          // SECURITY: Store URL in secure file with restricted permissions
+          const urlFile = this.createSecureTempFile(`ghcc-${session}-tunnel-url`, '.txt');
+          fs.writeFileSync(urlFile, publicUrl, { mode: 0o600 });
+          
+          // Set up tunnel error handler
+          tunnel.on('error', (err: Error) => {
+            console.log(chalk.yellow(`\n⚠️  Tunnel error: ${err.message}`));
+          });
+          
+          tunnel.on('close', () => {
+            // Clean up URL file when tunnel closes
+            const urlDir = path.dirname(urlFile);
+            if (fs.existsSync(urlFile)) {
+              fs.unlinkSync(urlFile);
+            }
+            if (fs.existsSync(urlDir)) {
+              fs.rmdirSync(urlDir);
+            }
+          });
+          
+          spinner5.succeed(`Public URL created`);
+          
+          // Get tunnel password (public IP) for user to share
+          try {
+            const { stdout: password } = await execAsync('curl -s https://loca.lt/mytunnelpassword');
+            tunnelPassword = password.trim();
+          } catch {
+            // Ignore if we can't fetch the password
           }
-        });
-        
-        spinner5.succeed(`Public URL created: ${chalk.cyan(publicUrl)}`);
-        
-        // Get tunnel password (public IP) for user to share
-        try {
-          const { stdout: tunnelPassword } = await execAsync('curl -s https://loca.lt/mytunnelpassword');
-          const password = tunnelPassword.trim();
-          if (password) {
-            console.log(chalk.gray(`   Tunnel Password: ${chalk.white(password)} ${chalk.gray('(share with visitors)')}`));
-          }
-        } catch {
-          // Ignore if we can't fetch the password
+        } catch (error) {
+          spinner5.warn('Failed to create public tunnel');
+          console.log(chalk.yellow('   Session is available locally only'));
+          console.log(chalk.gray(`   Error: ${error instanceof Error ? error.message : error}`));
+          console.log(chalk.gray('   Tip: Check https://loca.lt for service status'));
         }
-      } catch (error) {
-        spinner5.warn('Failed to create public tunnel');
-        console.log(chalk.yellow('   Session is available locally only'));
-        console.log(chalk.gray(`   Error: ${error instanceof Error ? error.message : error}`));
-        console.log(chalk.gray('   Tip: Check https://loca.lt for service status'));
+      } else {
+        // Local-only mode: show helpful tip
+        console.log(chalk.dim('💡 Tip: Run with --public flag to enable internet access via QR code'));
       }
     } catch (error) {
       spinner4.fail('Failed to spawn ttyd process');
@@ -628,26 +599,26 @@ export class SessionManager {
 
     console.log(chalk.green('\n✅ Remote session is ready!\n'));
     
-    // SECURITY: Display authentication credentials
-    console.log(chalk.white('🔐 Authentication Credentials:\n'));
-    console.log(chalk.gray('   Username: ') + chalk.white('user'));
-    console.log(chalk.gray('   Password: ') + chalk.white(ttydPassword));
-    console.log(chalk.yellow('\n⚠️  Save this password! You\'ll need it to access the terminal'));
-    console.log(chalk.gray('   It will not be shown again for security reasons\n'));
     
     // Show QR code if public URL exists
     if (publicUrl) {
       console.log(chalk.white('📱 Scan QR code to access from mobile:\n'));
       qrcode.generate(publicUrl, { small: true });
       console.log();
-      console.log(chalk.yellow('⚠️  Important: Visitors need TWO passwords'));
-      console.log(chalk.gray('   1. Tunnel password (shown earlier)'));
-      console.log(chalk.gray('   2. Terminal password (shown above)'));
+      console.log(chalk.yellow('⚠️  Important: Visitors need TWO credentials'));
+      console.log(chalk.gray(`   1. Tunnel password: ${chalk.white(tunnelPassword)}`));
+      console.log(chalk.gray('   2. Terminal credentials (shown below)'));
       console.log(chalk.gray('   After tunnel auth, it works for 7 days from their IP'));
       console.log();
     }
+
+    // SECURITY: Display authentication credentials
+    console.log(chalk.white('🔐 Terminal Session Credentials:\n'));
+    console.log(chalk.gray('   Username: ') + chalk.white('user'));
+    console.log(chalk.gray('   Password: ') + chalk.white(ttydPassword));
+    console.log();
     
-    this.showUrls(finalPort.toString(), session, publicUrl, ttydPassword);
+    this.showUrls(finalPort.toString(), session, publicUrl, httpsEnabled);
   }
 
   async stop(options: StopOptions): Promise<void> {
@@ -669,10 +640,10 @@ export class SessionManager {
       
       try {
         const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}" 2>/dev/null || true');
-        const allSessions = stdout.trim().split('\n').filter(s => s && s.startsWith('copilot-remote'));
+        const allSessions = stdout.trim().split('\n').filter(s => s && s.startsWith('ghcc-session'));
         
         if (allSessions.length === 0) {
-          console.log(chalk.yellow('ℹ  No copilot-remote sessions found\n'));
+          console.log(chalk.yellow('ℹ  No ghcc-session sessions found\n'));
           return;
         }
         
@@ -776,117 +747,11 @@ export class SessionManager {
     } else {
       console.log(chalk.green(`\n✅ Session "${sessionName}" stopped\n`));
     }
+  
+
   }
 
-  async status(options: StatusOptions): Promise<void> {
-    const { session } = options;
-    
-    console.log(chalk.cyan('📊 Session Status\n'));
-    
-    if (session) {
-      // Show status for specific session
-      await this.showSessionStatus(session);
-    } else {
-      // Show status for all sessions (optimized with batch discovery)
-      try {
-        const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}" 2>/dev/null || true');
-        const allSessions = stdout.trim().split('\n').filter(s => s && s.startsWith('copilot-remote'));
-        
-        if (allSessions.length === 0) {
-          console.log(chalk.yellow('ℹ  No copilot-remote sessions found\n'));
-          return;
-        }
-        
-        // OPTIMIZATION: Single batch call instead of N individual calls
-        const processMap = await this.getAllTtydProcesses();
-        
-        for (const sess of allSessions) {
-          await this.showSessionStatusWithCache(sess, processMap);
-          console.log('');
-        }
-      } catch (error) {
-        console.log(chalk.yellow('ℹ  No copilot-remote sessions found\n'));
-      }
-    }
-  }
-
-  private async showSessionStatus(session: string): Promise<void> {
-    // Check if tmux session exists (source of truth)
-    if (!(await this.sessionExists(session))) {
-      console.log(chalk.red(`❌ ${session} (not running)`));
-      return;
-    }
-    
-    // Session exists, show details
-    console.log(chalk.green(`✅ ${session}`));
-    
-    // Get creation time
-    try {
-      const { stdout } = await execAsync(`tmux display-message -t ${session} -p "#{session_created}"`);
-      const created = new Date(parseInt(stdout.trim()) * 1000);
-      console.log(chalk.gray(`   Started: ${created.toLocaleString()}`));
-    } catch {
-      // Can't get creation time
-    }
-
-    // Find ttyd process (using pgrep, not PID file)
-    const ttydPid = await this.findTtydPid(session);
-    if (ttydPid) {
-      const port = await this.getTtydPort(ttydPid);
-      if (port) {
-        console.log(chalk.gray(`   Port: ${port}`));
-      } else {
-        console.log(chalk.gray(`   ttyd: running (port unknown)`));
-      }
-    } else {
-      console.log(chalk.gray(`   ttyd: not running`));
-    }
-    
-    // Show public URL if available
-    const publicUrl = await this.getTunnelUrl(session);
-    if (publicUrl) {
-      console.log(chalk.gray(`   Public URL: ${chalk.cyan(publicUrl)}`));
-    }
-  }
-
-  // Optimized version using pre-fetched process map
-  private async showSessionStatusWithCache(session: string, processMap: Map<string, { pid: string; port: string }>): Promise<void> {
-    // Check if tmux session exists
-    if (!(await this.sessionExists(session))) {
-      console.log(chalk.red(`❌ ${session} (not running)`));
-      return;
-    }
-    
-    // Session exists, show details
-    console.log(chalk.green(`✅ ${session}`));
-    
-    // Get creation time
-    try {
-      const { stdout } = await execAsync(`tmux display-message -t ${session} -p "#{session_created}"`);
-      const created = new Date(parseInt(stdout.trim()) * 1000);
-      console.log(chalk.gray(`   Started: ${created.toLocaleString()}`));
-    } catch {
-      // Can't get creation time
-    }
-
-    // Lookup from cache instead of calling pgrep
-    const processInfo = processMap.get(session);
-    if (processInfo && processInfo.port) {
-      console.log(chalk.gray(`   Port: ${processInfo.port}`));
-    } else if (processInfo) {
-      console.log(chalk.gray(`   ttyd: running (port unknown)`));
-    } else {
-      console.log(chalk.gray(`   ttyd: not running`));
-    }
-    
-    // Show public URL if available
-    const publicUrl = await this.getTunnelUrl(session);
-    if (publicUrl) {
-      console.log(chalk.gray(`   Public URL: ${chalk.cyan(publicUrl)}`));
-    }
-  }
-
-  showUrls(port: string, session?: string, publicUrl?: string, password?: string): void {
+  showUrls(port: string, session?: string, publicUrl?: string, httpsEnabled: boolean = false): void {
     const interfaces = os.networkInterfaces();
     let localIp = 'localhost';
     
@@ -902,7 +767,7 @@ export class SessionManager {
       }
     }
 
-    const protocol = 'https'; // Using HTTPS now with self-signed cert
+    const protocol = httpsEnabled ? 'https' : 'http';
     console.log(chalk.cyan('Access URLs:'));
     console.log(chalk.white(`  Local:      ${chalk.underline(`${protocol}://localhost:${port}`)}`));
     console.log(chalk.white(`  Network:    ${chalk.underline(`${protocol}://${localIp}:${port}`)}`));
@@ -912,42 +777,7 @@ export class SessionManager {
     if (session) {
       console.log(chalk.white(`  Session:    ${session}`));
     }
-    if (password) {
-      console.log(chalk.gray(`  Auth:       user:${password}`));
-    }
     console.log('');
   }
   
-  async url(options: UrlOptions): Promise<void> {
-    const { session } = options;
-    
-    // Case 1: No session provided - show help
-    if (!session) {
-      console.log(chalk.yellow('\n⚠️  Please specify a session name\n'));
-      console.log(chalk.white('Usage: ghcc-client url -s <session-name>'));
-      console.log('');
-      console.log(chalk.gray('💡 Tip: Run "ghcc-client status" to see all sessions'));
-      console.log('');
-      return;
-    }
-    
-    // Case 2: Show QR code for specific session
-    if (!(await this.sessionExists(session))) {
-      console.log(chalk.red(`\n❌ Session "${session}" is not running\n`));
-      return;
-    }
-    
-    const publicUrl = await this.getTunnelUrl(session);
-    if (!publicUrl) {
-      console.log(chalk.yellow(`\n⚠️  No public URL found for session "${session}"\n`));
-      console.log(chalk.gray('This session may not have a tunnel, or the tunnel failed to start.'));
-      console.log('');
-      return;
-    }
-    
-    console.log(chalk.cyan(`\n📱 QR Code for session "${session}":\n`));
-    console.log(chalk.white(`URL: ${chalk.underline(publicUrl)}\n`));
-    qrcode.generate(publicUrl, { small: true });
-    console.log('');
-  }
 }

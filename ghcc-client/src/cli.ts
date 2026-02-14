@@ -35,6 +35,7 @@ program
   .description('GitHub Copilot CLI Remote Client - Access Copilot from anywhere')
   .version('1.0.0')
   .option('-p, --port <port>', 'Port for remote access (auto-assigned if not specified)')
+  .option('--public', 'Enable public access via localtunnel with QR code')
   .allowExcessArguments(false)
   .showHelpAfterError('(use --help for usage information)')
   .action(async (options) => {
@@ -46,10 +47,11 @@ program
     process.on('SIGTERM', cleanupHandler);
     
     try {
-      // Start session (blocking call)
+      // Start session
       await manager.start({
         port: options.port || undefined,
-        session: sessionName
+        session: sessionName,
+        public: options.public || false
       });
       
       // Keep process alive
@@ -68,8 +70,9 @@ program
 program.on('--help', () => {
   console.log('');
   console.log('Usage:');
-  console.log('  $ ghcc-client              Start a new session (auto-assigned port)');
+  console.log('  $ ghcc-client              Start local session only');
   console.log('  $ ghcc-client -p 8080      Start on specific port');
+  console.log('  $ ghcc-client --public     Enable public access with QR code');
   console.log('');
   console.log('Controls:');
   console.log('  Ctrl+C                     Stop the session and cleanup');
