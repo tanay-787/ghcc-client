@@ -2,13 +2,18 @@
 
 A Node.js CLI utility tool that allows its users to remotely interact with a GitHub Copilot CLI session from their mobiles, tablets and any other devices that support web-browsers.
 
-## Features
 
-- **Persistent Copilot sessions** — Runs Copilot CLI inside tmux so your session survives disconnects, terminal closures, and even host reboots
-- **Browser-based terminal** — Uses ttyd to expose the tmux session as a web interface compatible with mobile and desktop browsers
-- **Native keyboard toolbar UI** — Custom mobile keyboard toolbar components inspired by Termux app, providing quick access to common terminal shortcuts (Ctrl, Alt, Tab, arrow keys, etc.) for seamless mobile interactions
-- **Portrait-based resizing** — Automatically adapts terminal layout for portrait and landscape orientations, optimizing readability on mobile devices
-- **Public tunneling** — Optional localtunnel integration creates temporary public URLs with QR codes for quick mobile access
+## Recommended Workflow (Mobile)
+
+For the best mobile experience, especially with GitHub Copilot CLI, we recommend this vocal-friendly workflow:
+
+1. **Start normally**: Run `ghcc-client` in your terminal.
+2. **Connect mobile**: Ensure your mobile is on the same network as your PC and open the **Network URL**.
+3. **Voice Input**: On your mobile, tap on the input bar to bring up your keyboard. If using **Gboard** (Android/iOS), tap the microphone icon to use **Speech-to-Text (STT)**. Speak your prompt, and it will be typed directly into the terminal.
+4. **Command Navigation**: Use the custom **keyboard toolbar** (rendered in the browser) for desktop-specific keys like `Ctrl`, `Alt`, `Tab`, and arrows. This allows you to navigate Copilot CLI's menus and suggestions while using voice for the actual prompts.
+
+This setup effectively turns GitHub Copilot CLI into a partially voice-responsive assistant on your mobile device.
+
 
 ## Requirements
 
@@ -232,27 +237,12 @@ See the [LICENSE](./LICENSE) file for full details.
 Copyright (c) 2026 All rights reserved - Licensed under GPL-3.0
 ```
 
-## Dependencies
-
-This project relies on the following third-party components:
-
-| Component | Purpose |
-|-----------|---------|
-| **ttyd** | Terminal-to-web server using WebSockets and HTTP |
-| **tmux** | Session persistence and terminal multiplexing |
-| **localtunnel** | Optional public URL and tunneling for remote access |
-| **qrcode-terminal** | QR code generation for mobile access links |
-
 ## Support & Feedback
 
 - **GitHub Profile:** [tanay-787](https://github.com/tanay-787)
 - **Bug reports & features:** [Issue tracker](https://github.com/tanay-787/ghcc-client/issues)
 - **General discussion:** [Discussions](https://github.com/tanay-787/ghcc-client/discussions)
-- **Security concerns:** See [SECURITY.md](./SECURITY.md)
 
 Have questions or ideas? Open an issue—we're here to help!
 
 ---
-
-**Co-authored by:** Tanay Gupte & GitHub Copilot CLI  
-**Last updated:** 2026 | Built with TypeScript and Node.js

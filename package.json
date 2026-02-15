@@ -8,7 +8,7 @@
     "ghcc-client": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc && npm run copy-assets",
+    "build": "tsc && npm run copy-assets && chmod +x dist/cli.js",
     "copy-assets": "mkdir -p dist/assets && cp -r assets/* dist/assets/",
     "dev": "tsc --watch",
     "prepublishOnly": "npm run build",
