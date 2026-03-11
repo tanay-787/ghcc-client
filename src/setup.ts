@@ -24,11 +24,6 @@ if (fs.existsSync(binaryPath)) {
     fs.chmodSync(binaryPath, '755');
     console.log('✅ ghcc-client installed successfully!');
     console.log('');
-    console.log('Get started:');
-    console.log('  ghcc-client start    # Start remote session');
-    console.log('  ghcc-client status   # Check status');
-    console.log('  ghcc-client --help   # See all commands');
-    console.log('');
   } catch (error) {
     console.error('Failed to make ttyd binary executable:', (error as Error).message);
   }

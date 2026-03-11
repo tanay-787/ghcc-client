@@ -333,7 +333,15 @@ export class SessionManager {
     
     const spinner3: Ora = ora('Starting Copilot in tmux...').start();
     try {
-      await execAsync(`tmux new-session -d -s ${session} ${copilotCmd}`);
+      // Create tmux session
+      await execAsync(`tmux new-session -d -s ${session}`);
+      
+      // Set history limit on this specific session (50,000 lines)
+      // This MUST match the xterm.js scrollback for full scroll history
+      await execAsync(`tmux set-option -t ${session} history-limit 50000`);
+      
+      // Start Copilot CLI in the session
+      await execAsync(`tmux send-keys -t ${session} '${copilotCmd}' Enter`);
       
       // Wait and verify session is still alive
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -380,6 +388,7 @@ export class SessionManager {
         html = html.replace('<head>', '<head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">');
       }
       
+      // Note: Keyboard sheet is now an overlay, no DOM manipulation needed
       // SECURITY: Write with restricted permissions (0600 - owner read/write only)
       fs.writeFileSync(customHtmlPath, html, { mode: 0o600 });
     } catch (error) {
@@ -430,7 +439,8 @@ export class SessionManager {
       // Add client options for better UX
       ttydArgs.push('-t', 'fontSize=14');
       ttydArgs.push('-t', 'fontFamily=Consolas,Monaco,Courier New,monospace');
-      ttydArgs.push('-t', 'theme={"background":"#1e1e1e","foreground":"#d4d4d4","cursor":"#d4d4d4","selection":"#264f78"}');
+      ttydArgs.push('-t', 'scrollback=50000');  // Large scrollback for long Copilot conversations
+      // ttydArgs.push('-t', 'theme={"background":"#1e1e1e","foreground":"#d4d4d4","cursor":"#d4d4d4","selection":"#264f78"}');
       ttydArgs.push('-t', `titleFixed=GitHub Copilot - ${session}`);
       ttydArgs.push('-t', 'disableLeaveAlert=true');
       ttydArgs.push('-t', 'disableResizeOverlay=true');
