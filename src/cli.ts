@@ -4,6 +4,7 @@ import { program } from 'commander';
 import { SessionManager } from './session-manager';
 import chalk from 'chalk';
 import { randomBytes } from 'crypto';
+import pkg from '../package.json';
 
 const manager = new SessionManager();
 
@@ -31,9 +32,9 @@ async function cleanup(sessionName: string) {
 }
 
 program
-  .name('ghcc-client')
-  .description('GitHub Copilot CLI Remote Client - Access Copilot from anywhere')
-  .version('1.0.0')
+  .name(pkg.name)
+  .description(pkg.description)
+  .version(pkg.version)
   .option('-p, --port <port>', 'Port for remote access (auto-assigned if not specified)')
   .option('--public', 'Enable public access via localtunnel with QR code')
   .allowExcessArguments(false)
